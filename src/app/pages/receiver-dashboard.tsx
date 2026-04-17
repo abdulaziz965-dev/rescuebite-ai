@@ -6,6 +6,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
 import { Badge } from "../components/ui/badge";
+import { NotificationBell } from "../components/notification-bell";
 import {
   Home,
   Search,
@@ -25,8 +26,9 @@ import {
 } from "lucide-react";
 import { ImageWithFallback } from "../components/figma/ImageWithFallback";
 import { collection, doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
-import { sendPasswordResetEmail, updateProfile } from "firebase/auth";
+import { onAuthStateChanged, sendPasswordResetEmail, updateProfile } from "firebase/auth";
 import { auth, db } from "../../firebase/config";
+import { sendNotification } from "../lib/notifications";
 
 type Donation = {
   id: string;
@@ -42,6 +44,7 @@ type Donation = {
   createdAt?: { toDate?: () => Date };
   donorUid?: string;
   donorEmail?: string;
+  claimedByUid?: string;
   claimedProofImages?: string[];
 };
 
@@ -81,6 +84,7 @@ export function ReceiverDashboard() {
   const [proofImages, setProofImages] = useState<string[]>([]);
   const [isClaimSubmitLoading, setIsClaimSubmitLoading] = useState(false);
   const [claimFlowMessage, setClaimFlowMessage] = useState("");
+  const [currentUserUid, setCurrentUserUid] = useState<string | null>(auth.currentUser?.uid || null);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(
@@ -106,6 +110,14 @@ export function ReceiverDashboard() {
     const nextTheme = savedTheme === "dark" ? "dark" : "light";
     setThemeMode(nextTheme);
     document.documentElement.classList.toggle("dark", nextTheme === "dark");
+  }, []);
+
+  useEffect(() => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      setCurrentUserUid(user?.uid || null);
+    });
+
+    return () => unsubscribeAuth();
   }, []);
 
   useEffect(() => {
@@ -238,16 +250,24 @@ export function ReceiverDashboard() {
     });
   }, [donations, filterType, searchQuery]);
 
+  const userClaimedDonations = useMemo(() => {
+    if (!currentUserUid) {
+      return [];
+    }
+
+    return donations.filter((donation) => donation.claimed && donation.claimedByUid === currentUserUid);
+  }, [currentUserUid, donations]);
+
   const recentlyClaimed = useMemo(() => {
-    return donations
-      .filter((donation) => donation.claimed && donation.claimedAt)
+    return userClaimedDonations
+      .filter((donation) => donation.claimedAt)
       .sort((a, b) => {
         const timeA = a.claimedAt?.toDate?.().getTime() || 0;
         const timeB = b.claimedAt?.toDate?.().getTime() || 0;
         return timeB - timeA;
       })
       .slice(0, 12);
-  }, [donations]);
+  }, [userClaimedDonations]);
 
   const liveMapDonations = useMemo(() => {
     return donations
@@ -260,15 +280,14 @@ export function ReceiverDashboard() {
       }));
   }, [donations]);
 
-  const totalClaims = useMemo(() => donations.filter((donation) => donation.claimed).length, [donations]);
+  const totalClaims = useMemo(() => userClaimedDonations.length, [userClaimedDonations]);
   const mealsReceived = useMemo(() => {
-    return donations
-      .filter((donation) => donation.claimed)
+    return userClaimedDonations
       .reduce((sum, donation) => {
         const parsed = parseInt(donation.quantity, 10);
         return sum + (Number.isNaN(parsed) ? 0 : parsed);
       }, 0);
-  }, [donations]);
+  }, [userClaimedDonations]);
   const activeClaims = useMemo(() => donations.filter((donation) => !donation.claimed).length, [donations]);
   const peopleFed = useMemo(() => Math.max(1, Math.round(mealsReceived / 3)), [mealsReceived]);
   const donationsByType = useMemo(() => {
@@ -365,6 +384,28 @@ export function ReceiverDashboard() {
         claimedProofImages: proofImages,
         claimedProofDescription: proofDescription.trim(),
       });
+
+      await Promise.all([
+        claimDraftDonation.donorUid
+          ? sendNotification({
+              recipientUid: claimDraftDonation.donorUid,
+              title: "New claim submitted",
+              message: `${receiverDisplayName} submitted proof for ${claimDraftDonation.foodName}.`,
+              source: "receiver-dashboard",
+            })
+          : sendNotification({
+              recipientRole: "donor",
+              title: "New claim submitted",
+              message: `${receiverDisplayName} submitted proof for ${claimDraftDonation.foodName}.`,
+              source: "receiver-dashboard",
+            }),
+        sendNotification({
+          recipientRole: "admin",
+          title: "Receiver claim proof received",
+          message: `${receiverDisplayName} submitted a verified claim for ${claimDraftDonation.foodName}.`,
+          source: "receiver-dashboard",
+        }),
+      ]);
 
       setClaimFlowMessage("Claim submitted with proof successfully.");
       setClaimDraftDonation(null);
@@ -632,10 +673,7 @@ export function ReceiverDashboard() {
               <p className="text-gray-600">{upcomingTitle}, {receiverSubtitle}</p>
             </div>
             <div className="flex items-center gap-4">
-              <button className="p-2 rounded-2xl hover:bg-gray-100 transition-all relative">
-                <Bell className="w-6 h-6 text-gray-600" />
-                <span className="absolute top-1 right-1 w-2 h-2 bg-[#f97316] rounded-full"></span>
-              </button>
+              <NotificationBell audienceRole="receiver" />
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#3b82f6] to-[#8b5cf6] flex items-center justify-center overflow-hidden">
                   {profilePhotoUrl ? <img src={profilePhotoUrl} alt="Profile" className="w-full h-full object-cover" /> : <User className="w-6 h-6 text-white" />}

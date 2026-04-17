@@ -7,6 +7,7 @@ import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Badge } from "../components/ui/badge";
+import { NotificationBell } from "../components/notification-bell";
 import { 
   Home, 
   Upload, 
@@ -14,7 +15,6 @@ import {
   Clock, 
   Utensils,
   Settings,
-  Bell,
   User,
   Package,
   CheckCircle2,
@@ -30,6 +30,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { addDoc, collection, doc, getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
 import { sendPasswordResetEmail, updateProfile } from "firebase/auth";
 import { auth, db } from "../../firebase/config";
+import { sendNotification } from "../lib/notifications";
 
 type Donation = {
   id: string;
@@ -489,7 +490,7 @@ export function DonorDashboard() {
 
     setLoading(true);
     try {
-      await addDoc(collection(db, "donations"), {
+      const donationRef = await addDoc(collection(db, "donations"), {
         foodName,
         quantity,
         foodType,
@@ -503,6 +504,30 @@ export function DonorDashboard() {
         claimed: false,
         createdAt: serverTimestamp(),
       });
+
+      await Promise.all([
+        sendNotification({
+          recipientRole: "receiver",
+          title: "New donation listed",
+          message: `${foodName} is now available for receivers.`,
+          source: "donor-dashboard",
+          link: "/receiver",
+        }),
+        sendNotification({
+          recipientRole: "volunteer",
+          title: "New pickup request available",
+          message: `${foodName} has been listed for pickup and delivery.`,
+          source: "donor-dashboard",
+          link: "/volunteer",
+        }),
+        sendNotification({
+          recipientRole: "admin",
+          title: "New donation listed",
+          message: `${foodName} was listed by ${auth.currentUser?.displayName || auth.currentUser?.email || "a donor"}.`,
+          source: "donor-dashboard",
+          link: "/admin",
+        }),
+      ]);
 
       setSuccessMessage("Donation submitted successfully");
       
@@ -610,6 +635,13 @@ export function DonorDashboard() {
         source: "donor-dashboard",
         status: "open",
         createdAt: serverTimestamp(),
+      });
+
+      await sendNotification({
+        recipientRole: "admin",
+        title: "New report submitted",
+        message: `${auth.currentUser?.displayName || auth.currentUser?.email || "A donor"} reported ${selectedTarget.name}.`,
+        source: "donor-dashboard",
       });
 
       setReportMessage("Report submitted successfully. Our team will review it shortly.");
@@ -757,10 +789,7 @@ export function DonorDashboard() {
               <p className="text-gray-600">{timeBasedGreeting}, {donorGreetingName}</p>
             </div>
             <div className="flex items-center gap-4">
-              <button className="p-2 rounded-2xl hover:bg-gray-100 transition-all relative">
-                <Bell className="w-6 h-6 text-gray-600" />
-                <span className="absolute top-1 right-1 w-2 h-2 bg-[#f97316] rounded-full"></span>
-              </button>
+              <NotificationBell audienceRole="donor" />
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#10b981] to-[#3b82f6] flex items-center justify-center">
                   <User className="w-6 h-6 text-white" />

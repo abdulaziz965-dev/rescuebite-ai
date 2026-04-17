@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
+import { NotificationBell } from "../components/notification-bell";
 import {
   Home,
   Users,
@@ -487,10 +488,7 @@ export function AdminDashboard() {
               <p className="text-gray-600">Real-time control center for users, donations, and operations</p>
             </div>
             <div className="flex items-center gap-4">
-              <button className="p-2 rounded-2xl hover:bg-gray-100 transition-all relative">
-                <Bell className="w-6 h-6 text-gray-600" />
-                <span className="absolute top-1 right-1 w-2 h-2 bg-[#f97316] rounded-full"></span>
-              </button>
+              <NotificationBell audienceRole="admin" />
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#8b5cf6] to-[#ec4899] flex items-center justify-center">
                   <User className="w-6 h-6 text-white" />

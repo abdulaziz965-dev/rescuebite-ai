@@ -6,6 +6,7 @@ import { Badge } from "../components/ui/badge";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
+import { NotificationBell } from "../components/notification-bell";
 import { 
   Home, 
   MapPin, 
@@ -26,6 +27,7 @@ import {
 import { collection, doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
 import { sendPasswordResetEmail, updateProfile } from "firebase/auth";
 import { auth, db } from "../../firebase/config";
+import { sendNotification } from "../lib/notifications";
 
 type TaskStatus = "pending" | "active" | "completed";
 
@@ -39,6 +41,7 @@ type PickupTask = {
   estimatedTime: string;
   urgency: "high" | "medium" | "low";
   donorPhone: string;
+  donorUid?: string;
   receiverPhone: string;
   status: TaskStatus;
   acceptedAt?: { toDate?: () => Date };
@@ -110,6 +113,7 @@ export function VolunteerDashboard() {
               estimatedTime: data.estimatedTime || "N/A",
               urgency: (data.urgency as "high" | "medium" | "low") || "medium",
               donorPhone: data.donorPhone || "Not shared",
+              donorUid: data.donorUid,
               receiverPhone: data.receiverPhone || "Not shared",
               status,
               acceptedAt: data.volunteerAcceptedAt,
@@ -242,6 +246,7 @@ export function VolunteerDashboard() {
     if (!user) {
       return;
     }
+    const selectedTask = tasks.find((task) => task.id === taskId);
     await updateDoc(doc(db, "donations", taskId), {
       volunteerStatus: "active",
       volunteerUid: user.uid,
@@ -249,6 +254,30 @@ export function VolunteerDashboard() {
       volunteerAcceptedAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
+
+    if (selectedTask) {
+      await Promise.all([
+        selectedTask.donorUid
+          ? sendNotification({
+              recipientUid: selectedTask.donorUid,
+              title: "Volunteer accepted task",
+              message: `${volunteerName} accepted ${selectedTask.foodName} for delivery.`,
+              source: "volunteer-dashboard",
+            })
+          : sendNotification({
+              recipientRole: "donor",
+              title: "Volunteer accepted task",
+              message: `${volunteerName} accepted ${selectedTask.foodName} for delivery.`,
+              source: "volunteer-dashboard",
+            }),
+        sendNotification({
+          recipientRole: "admin",
+          title: "Volunteer task accepted",
+          message: `${volunteerName} accepted ${selectedTask.foodName}.`,
+          source: "volunteer-dashboard",
+        }),
+      ]);
+    }
   };
 
   const handleCompletionProofFilesSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -303,6 +332,28 @@ export function VolunteerDashboard() {
         deliveryProofVerifiedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
+
+      await Promise.all([
+        completionTask.donorUid
+          ? sendNotification({
+              recipientUid: completionTask.donorUid,
+              title: "Delivery completed",
+              message: `${volunteerName} completed delivery for ${completionTask.foodName}.`,
+              source: "volunteer-dashboard",
+            })
+          : sendNotification({
+              recipientRole: "donor",
+              title: "Delivery completed",
+              message: `${volunteerName} completed delivery for ${completionTask.foodName}.`,
+              source: "volunteer-dashboard",
+            }),
+        sendNotification({
+          recipientRole: "admin",
+          title: "Delivery proof verified",
+          message: `${volunteerName} submitted proof for ${completionTask.foodName}.`,
+          source: "volunteer-dashboard",
+        }),
+      ]);
 
       setCompletionMessage("Delivery completed and proof verified successfully.");
       setCompletionTask(null);
@@ -471,10 +522,7 @@ export function VolunteerDashboard() {
               <p className="text-gray-600">Welcome back, {volunteerName}</p>
             </div>
             <div className="flex items-center gap-4">
-              <button className="p-2 rounded-2xl hover:bg-gray-100 transition-all relative">
-                <Bell className="w-6 h-6 text-gray-600" />
-                <span className="absolute top-1 right-1 w-2 h-2 bg-[#f97316] rounded-full"></span>
-              </button>
+              <NotificationBell audienceRole="volunteer" />
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#8b5cf6] to-[#ec4899] flex items-center justify-center overflow-hidden">
                   {profilePhotoUrl ? <img src={profilePhotoUrl} alt="Profile" className="w-full h-full object-cover" /> : <User className="w-6 h-6 text-white" />}
