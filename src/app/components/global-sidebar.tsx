@@ -105,14 +105,22 @@ export function GlobalSidebar({
       {/* Mobile Menu Button */}
       <button
         onClick={() => setOpen(!open)}
-        className="fixed bottom-4 left-4 z-40 lg:hidden p-3 bg-gradient-to-br from-[#10b981] to-[#3b82f6] text-white rounded-full shadow-lg hover:shadow-xl transition-all"
+        className="fixed bottom-6 left-6 z-50 lg:hidden p-3 bg-gradient-to-br from-[#10b981] to-[#3b82f6] text-white rounded-full shadow-lg hover:shadow-xl transition-all hover:scale-110"
       >
         {open ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
       </button>
 
+      {/* Mobile Overlay - shown before sidebar */}
+      {open && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          onClick={() => setOpen(false)}
+        />
+      )}
+
       {/* Floating Sidebar */}
       <aside
-        className={`fixed left-0 top-0 h-screen w-72 bg-white shadow-2xl transform transition-transform duration-300 ease-in-out z-30 lg:translate-x-0 ${
+        className={`fixed left-0 top-0 h-screen w-72 bg-white shadow-2xl transform transition-transform duration-300 ease-in-out z-50 lg:translate-x-0 pointer-events-auto ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -163,14 +171,6 @@ export function GlobalSidebar({
           </div>
         </div>
       </aside>
-
-      {/* Mobile Overlay */}
-      {open && (
-        <div
-          className="fixed inset-0 bg-black/40 z-20 lg:hidden"
-          onClick={() => setOpen(false)}
-        />
-      )}
     </>
   );
 }

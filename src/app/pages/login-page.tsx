@@ -573,15 +573,16 @@ export function LoginPage() {
       );
 
       const provider = new GoogleAuthProvider();
+      provider.addScope("profile");
+      provider.addScope("email");
       const isAndroidOrIOS = isMobileOrEmbeddedBrowser();
 
       console.log("Mobile detected:", isAndroidOrIOS, "User-Agent:", navigator.userAgent);
 
-      // Always try redirect on mobile first - it's more reliable
+      // Use redirect on mobile - more reliable
       if (isAndroidOrIOS) {
         console.log("Using redirect flow for mobile");
-        setMessage("Redirecting to Google Sign-In...");
-        // Don't set authLoading(false) here - let redirect handle navigation
+        setMessage("Signing in with Google...");
         await signInWithRedirect(auth, provider);
         return;
       }
@@ -590,31 +591,35 @@ export function LoginPage() {
       try {
         console.log("Attempting popup sign-in");
         const result = await signInWithPopup(auth, provider);
+        console.log("Popup successful:", result.user.email);
         setAuthLoading(false);
         await continueGoogleSignIn(result.user);
+        return;
       } catch (error: any) {
         console.error("Popup error:", error?.code, error?.message);
 
+        // Fall back to redirect for popup-specific errors
         if (error?.code === "auth/popup-blocked" || error?.code === "auth/popup-closed-by-user") {
-          console.log("Popup blocked/closed, falling back to redirect");
-          setMessage("Redirecting to Google Sign-In...");
-          // Don't set authLoading(false) here - let redirect handle it
+          console.log("Popup blocked/closed, trying redirect");
+          setMessage("Signing in with Google (redirect)...");
           await signInWithRedirect(auth, provider);
           return;
         }
 
-        setAuthLoading(false);
-
+        // Handle specific Firebase configuration errors
         if (error?.code === "auth/unauthorized-domain") {
+          setAuthLoading(false);
           setMessage("This domain is not authorized in Firebase Auth. Add your Vercel domain in Firebase Console → Authentication → Settings → Authorized domains.");
           return;
         }
 
         if (error?.code === "auth/operation-not-allowed") {
-          setMessage("Google sign-in is disabled. Enable it in Firebase Console → Authentication → Sign-in method.");
+          setAuthLoading(false);
+          setMessage("Google sign-in is disabled in Firebase. Enable Google provider in Authentication > Sign-in method.");
           return;
         }
 
+        setAuthLoading(false);
         setMessage("Google sign-in failed. Please try again or use email/password login.");
       }
     } catch (error: any) {
