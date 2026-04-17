@@ -22,9 +22,11 @@ import {
   browserSessionPersistence,
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
+  getRedirectResult,
   sendPasswordResetEmail,
   setPersistence,
   signInWithPopup,
+  signInWithRedirect,
   signInWithEmailAndPassword,
   signOut,
   updateProfile,
@@ -161,6 +163,21 @@ export function LoginPage() {
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    const restoreGoogleRedirect = async () => {
+      try {
+        const result = await getRedirectResult(auth);
+        if (result?.user) {
+          await continueGoogleSignIn(result.user);
+        }
+      } catch {
+        // Ignore redirect restore issues here; the sign-in button handles messaging.
+      }
+    };
+
+    void restoreGoogleRedirect();
+  }, []);
+
   const connectedNgoCount = useMemo(() => {
     return users.filter((user) => user.role === "receiver").length;
   }, [users]);
@@ -209,6 +226,43 @@ export function LoginPage() {
       return otherDonorLabel.trim();
     }
     return fallbackName.trim();
+  };
+
+  const continueGoogleSignIn = async (user: { uid: string; email: string | null; displayName: string | null }) => {
+    const googleEmail = (user.email || "").toLowerCase();
+
+    if (!isAllowedEmailService(googleEmail)) {
+      await signOut(auth);
+      setMessage("Only verified email services are allowed (Gmail, Yahoo, Outlook, etc.).");
+      return;
+    }
+
+    const userDoc = await getDoc(doc(db, "users", user.uid));
+
+    if (userDoc.exists() && userDoc.data().role) {
+      navigate(resolveRoleLink(userDoc.data().role as string));
+      return;
+    }
+
+    setGoogleOnboardingUser({
+      uid: user.uid,
+      email: user.email || "",
+      fullName: user.displayName || "",
+    });
+    setSelectedRole(null);
+    setAdminAccessId("");
+    setAdminAccessPassword("");
+    setReceiverType(null);
+    setReceiverIndividualMode(null);
+    setReceiverPastWorks("");
+    setReceiverGuidelinesAccepted(false);
+    setNgoName("");
+    setNgoWebsite("");
+    setDonorCategory(null);
+    setRestaurantName("");
+    setOtherDonorLabel("");
+    setDonorLocation("");
+    setMessage("Google sign-in successful. Scroll down to complete role setup.");
   };
 
   const handleForgotPassword = async () => {
@@ -446,43 +500,23 @@ export function LoginPage() {
       );
 
       const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      const googleEmail = (result.user.email || "").toLowerCase();
+      try {
+        const result = await signInWithPopup(auth, provider);
+        await continueGoogleSignIn(result.user);
+      } catch (error: any) {
+        if (error?.code === "auth/popup-blocked" || error?.code === "auth/popup-closed-by-user") {
+          setMessage("Popup was blocked. Continuing with redirect sign-in...");
+          await signInWithRedirect(auth, provider);
+          return;
+        }
 
-      if (!isAllowedEmailService(googleEmail)) {
-        await signOut(auth);
-        setMessage("Only verified email services are allowed (Gmail, Yahoo, Outlook, etc.).");
-        return;
+        if (error?.code === "auth/unauthorized-domain") {
+          setMessage("This domain is not authorized in Firebase Auth. Add your Vercel domain in Firebase Console → Authentication → Settings → Authorized domains.");
+          return;
+        }
+
+        setMessage("Google sign-in failed. Please try again.");
       }
-
-      const userDoc = await getDoc(doc(db, "users", result.user.uid));
-
-      if (userDoc.exists() && userDoc.data().role) {
-        navigate(resolveRoleLink(userDoc.data().role as string));
-        return;
-      }
-
-      setGoogleOnboardingUser({
-        uid: result.user.uid,
-        email: result.user.email || "",
-        fullName: result.user.displayName || "",
-      });
-      setSelectedRole(null);
-      setAdminAccessId("");
-      setAdminAccessPassword("");
-      setReceiverType(null);
-      setReceiverIndividualMode(null);
-      setReceiverPastWorks("");
-      setReceiverGuidelinesAccepted(false);
-      setNgoName("");
-      setNgoWebsite("");
-      setDonorCategory(null);
-      setRestaurantName("");
-      setOtherDonorLabel("");
-      setDonorLocation("");
-      setMessage("Google sign-in successful.Scroll down to Complete role setup to continue.");
-    } catch {
-      setMessage("Google sign-in failed. Please try again.");
     } finally {
       setAuthLoading(false);
     }

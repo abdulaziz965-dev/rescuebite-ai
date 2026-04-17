@@ -7,6 +7,7 @@ import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
 import { Badge } from "../components/ui/badge";
 import { NotificationBell } from "../components/notification-bell";
+import { Sheet, SheetContent, SheetTrigger } from "../components/ui/sheet";
 import {
   Home,
   Search,
@@ -23,6 +24,8 @@ import {
   CheckCircle2,
   Settings,
   BarChart3,
+  Menu,
+  X
 } from "lucide-react";
 import { ImageWithFallback } from "../components/figma/ImageWithFallback";
 import { collection, doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
@@ -52,6 +55,7 @@ type ReceiverMode = "individual" | "ngo";
 type ReceiverIndividualMode = "new" | "experienced";
 
 export function ReceiverDashboard() {
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"available" | "history" | "map" | "proof" | "settings">("available");
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<string | null>(null);
@@ -576,8 +580,8 @@ export function ReceiverDashboard() {
   };
 
   return (
-    <div className={`min-h-screen flex ${themeMode === "dark" ? "bg-slate-950 text-slate-100" : "bg-gray-50"}`}>
-      <aside className={`w-72 border-r p-6 flex flex-col ${themeMode === "dark" ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200"}`}>
+    <div className={`min-h-screen flex flex-col lg:flex-row ${themeMode === "dark" ? "bg-slate-950 text-slate-100" : "bg-gray-50"}`}>
+      <aside className={`hidden lg:flex lg:w-72 border-r p-6 flex-col ${themeMode === "dark" ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200"}`}>
         <div className="flex items-center gap-2 mb-8">
           <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#10b981] to-[#3b82f6] flex items-center justify-center">
             <Utensils className="w-6 h-6 text-white" />
@@ -666,10 +670,10 @@ export function ReceiverDashboard() {
       </aside>
 
       <div className="flex-1 flex flex-col">
-        <header className={`border-b px-8 py-4 ${themeMode === "dark" ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200"}`}>
+        <header className={`border-b px-4 md:px-6 lg:px-8 py-2 md:py-4 ${themeMode === "dark" ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200"}`}>
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold">Receiver Dashboard</h1>
+              <h1 className="text-lg md:text-xl lg:text-2xl font-bold">Receiver Dashboard</h1>
               <p className="text-gray-600">{upcomingTitle}, {receiverSubtitle}</p>
             </div>
             <div className="flex items-center gap-4">
@@ -687,7 +691,7 @@ export function ReceiverDashboard() {
           </div>
         </header>
 
-        <main className="flex-1 p-8 overflow-auto">
+        <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-auto">
           {activeTab === "available" && (
             <div className="grid lg:grid-cols-3 gap-8">
               <div className="lg:col-span-2 space-y-6">
@@ -787,7 +791,7 @@ export function ReceiverDashboard() {
                   </button>
                 </div>
 
-                <div className="grid md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-6">
                   {filteredAndSortedDonations.length > 0 ? (
                     filteredAndSortedDonations.map((donation, index) => (
                       <Card key={donation.id} className={`rounded-3xl border-0 shadow-lg hover:shadow-xl transition-all overflow-hidden ${index === 0 ? "ring-2 ring-[#10b981]" : ""}`}>

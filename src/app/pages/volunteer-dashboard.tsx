@@ -7,6 +7,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
 import { NotificationBell } from "../components/notification-bell";
+import { Sheet, SheetContent, SheetTrigger } from "../components/ui/sheet";
 import { 
   Home, 
   MapPin, 
@@ -22,7 +23,9 @@ import {
   TrendingUp,
   Route,
   Phone,
-  Settings
+  Settings,
+  Menu,
+  X
 } from "lucide-react";
 import { collection, doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
 import { sendPasswordResetEmail, updateProfile } from "firebase/auth";
@@ -51,6 +54,7 @@ type PickupTask = {
 
 export function VolunteerDashboard() {
   const navigate = useNavigate();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"available" | "active" | "completed" | "profile">("available");
   const [tasks, setTasks] = useState<PickupTask[]>([]);
   const [volunteerName, setVolunteerName] = useState("Volunteer");
@@ -473,9 +477,9 @@ export function VolunteerDashboard() {
   };
 
   return (
-    <div className={`min-h-screen flex ${themeMode === "dark" ? "bg-slate-950 text-slate-100" : "bg-gray-50"}`}>
+    <div className={`min-h-screen flex flex-col lg:flex-row ${themeMode === "dark" ? "bg-slate-950 text-slate-100" : "bg-gray-50"}`}>
       {/* Sidebar */}
-      <aside className={`w-72 border-r p-6 flex flex-col ${themeMode === "dark" ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200"}`}>
+      <aside className={`hidden lg:flex lg:w-72 border-r p-6 flex-col ${themeMode === "dark" ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200"}`}>
         <div className="flex items-center gap-2 mb-8">
           <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#10b981] to-[#3b82f6] flex items-center justify-center">
             <Utensils className="w-6 h-6 text-white" />
@@ -515,10 +519,10 @@ export function VolunteerDashboard() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
         {/* Top Bar */}
-        <header className={`border-b px-8 py-4 ${themeMode === "dark" ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200"}`}>
+        <header className={`border-b px-4 md:px-6 lg:px-8 py-2 md:py-4 ${themeMode === "dark" ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200"}`}>
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold">Volunteer Dashboard</h1>
+              <h1 className="text-lg md:text-xl lg:text-2xl font-bold">Volunteer Dashboard</h1>
               <p className="text-gray-600">Welcome back, {volunteerName}</p>
             </div>
             <div className="flex items-center gap-4">
@@ -537,11 +541,11 @@ export function VolunteerDashboard() {
         </header>
 
         {/* Content Area */}
-        <main className="flex-1 p-8 overflow-auto">
+        <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-auto">
           {(activeTab === "available" || activeTab === "active" || activeTab === "completed") && (
           <>
           {/* Stats Cards */}
-          <div className="grid md:grid-cols-4 gap-6 mb-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 md:gap-6 mb-6 md:mb-8">
             <Card className="p-6 rounded-3xl border-0 shadow-lg">
               <div className="flex items-center justify-between mb-4">
                 <div className="w-12 h-12 rounded-2xl bg-[#d1fae5] flex items-center justify-center">
@@ -587,7 +591,7 @@ export function VolunteerDashboard() {
           )}
 
           {activeTab === "available" && (
-          <div className="grid lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-8">
             {/* Left Column - Pickup Requests */}
             <div className="lg:col-span-2 space-y-6">
               <Card className="p-8 rounded-3xl border-0 shadow-lg">

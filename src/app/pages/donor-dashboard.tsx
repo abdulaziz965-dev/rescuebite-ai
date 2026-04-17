@@ -8,6 +8,7 @@ import { Textarea } from "../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Badge } from "../components/ui/badge";
 import { NotificationBell } from "../components/notification-bell";
+import { Sheet, SheetContent, SheetTrigger } from "../components/ui/sheet";
 import { 
   Home, 
   Upload, 
@@ -24,7 +25,9 @@ import {
   Search,
   Building2,
   Globe,
-  LogOut
+  LogOut,
+  Menu,
+  X
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { addDoc, collection, doc, getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
@@ -69,6 +72,7 @@ type ReportableProfile = {
 
 export function DonorDashboard() {
   const navigate = useNavigate();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
   const [foodName, setFoodName] = useState("");
   const [quantity, setQuantity] = useState("");
@@ -702,9 +706,9 @@ export function DonorDashboard() {
   };
 
   return (
-    <div className={`min-h-screen flex ${themeMode === "dark" ? "bg-slate-950 text-slate-100" : "bg-gray-50"}`}>
-      {/* Sidebar */}
-      <aside className={`w-72 border-r p-6 flex flex-col ${themeMode === "dark" ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200"}`}>
+    <div className={`min-h-screen flex flex-col lg:flex-row ${themeMode === "dark" ? "bg-slate-950 text-slate-100" : "bg-gray-50"}`}>
+      {/* Sidebar - Hidden on mobile, visible on lg */}
+      <aside className={`hidden lg:flex lg:w-72 border-r p-6 flex-col ${themeMode === "dark" ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200"}`}>
         <div className="flex items-center gap-2 mb-8">
           <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#10b981] to-[#3b82f6] flex items-center justify-center">
             <Utensils className="w-6 h-6 text-white" />
@@ -782,73 +786,155 @@ export function DonorDashboard() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
         {/* Top Bar */}
-        <header className={`border-b px-8 py-4 ${themeMode === "dark" ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200"}`}>
+        <header className={`border-b px-4 md:px-6 lg:px-8 py-2 md:py-4 ${themeMode === "dark" ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200"}`}>
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold">Donor Dashboard</h1>
-              <p className="text-gray-600">{timeBasedGreeting}, {donorGreetingName}</p>
+            <div className="flex-1">
+              <h1 className="text-lg md:text-xl lg:text-2xl font-bold">Donor Dashboard</h1>
+              <p className="text-xs md:text-sm text-gray-600">{timeBasedGreeting}, {donorGreetingName}</p>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 md:gap-4">
               <NotificationBell audienceRole="donor" />
-              <div className="flex items-center gap-3">
+              <div className="hidden sm:flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#10b981] to-[#3b82f6] flex items-center justify-center">
                   <User className="w-6 h-6 text-white" />
                 </div>
-                <div>
-                  <div className="font-medium">{donorName}</div>
-                  <div className="text-sm text-gray-600">Donor</div>
+                <div className="hidden md:block">
+                  <div className="font-medium text-sm">{donorName}</div>
+                  <div className="text-xs text-gray-600">Donor</div>
                 </div>
               </div>
+              {/* Mobile Menu Button */}
+              <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
+                <SheetTrigger asChild>
+                  <button className="lg:hidden p-2 hover:bg-gray-100 rounded-lg">
+                    {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+                  </button>
+                </SheetTrigger>
+                <SheetContent side="left" className="p-0 w-72">
+                  <div className="p-6 h-full flex flex-col">
+                    <div className="flex items-center gap-2 mb-8">
+                      <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#10b981] to-[#3b82f6] flex items-center justify-center">
+                        <Utensils className="w-6 h-6 text-white" />
+                      </div>
+                      <span className="text-xl font-semibold">RescueBite AI</span>
+                    </div>
+                    <nav className="flex-1 space-y-2">
+                      <button
+                        onClick={() => { setActiveTab("overview"); setIsMobileMenuOpen(false); }}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
+                          activeTab === "overview" ? "bg-[#10b981] text-white" : "text-gray-600 hover:bg-gray-100"
+                        }`}
+                      >
+                        <Home className="w-5 h-5" />
+                        <span>Overview</span>
+                      </button>
+                      <button
+                        onClick={() => { setActiveTab("donate"); setIsMobileMenuOpen(false); }}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
+                          activeTab === "donate" ? "bg-[#10b981] text-white" : "text-gray-600 hover:bg-gray-100"
+                        }`}
+                      >
+                        <Upload className="w-5 h-5" />
+                        <span>New Donation</span>
+                      </button>
+                      <button
+                        onClick={() => { setActiveTab("history"); setIsMobileMenuOpen(false); }}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
+                          activeTab === "history" ? "bg-[#10b981] text-white" : "text-gray-600 hover:bg-gray-100"
+                        }`}
+                      >
+                        <Package className="w-5 h-5" />
+                        <span>My Donations</span>
+                      </button>
+                      <button
+                        onClick={() => { setActiveTab("analytics"); setIsMobileMenuOpen(false); }}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
+                          activeTab === "analytics" ? "bg-[#10b981] text-white" : "text-gray-600 hover:bg-gray-100"
+                        }`}
+                      >
+                        <BarChart3 className="w-5 h-5" />
+                        <span>Analytics</span>
+                      </button>
+                      <button
+                        onClick={() => { setActiveTab("ngos"); setIsMobileMenuOpen(false); }}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
+                          activeTab === "ngos" ? "bg-[#10b981] text-white" : "text-gray-600 hover:bg-gray-100"
+                        }`}
+                      >
+                        <Building2 className="w-5 h-5" />
+                        <span>Find NGOs</span>
+                      </button>
+                      <button
+                        onClick={() => { setActiveTab("settings"); setIsMobileMenuOpen(false); }}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
+                          activeTab === "settings" ? "bg-[#10b981] text-white" : "text-gray-600 hover:bg-gray-100"
+                        }`}
+                      >
+                        <Settings className="w-5 h-5" />
+                        <span>Settings</span>
+                      </button>
+                    </nav>
+                    <div className="border-t border-gray-200 pt-4">
+                      <Link to="/">
+                        <button className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-gray-600 hover:bg-gray-100 transition-all">
+                          <LogOut className="w-5 h-5" />
+                          <span>Back to Home</span>
+                        </button>
+                      </Link>
+                    </div>
+                  </div>
+                </SheetContent>
+              </Sheet>
             </div>
           </div>
         </header>
 
         {/* Content Area */}
-        <main className="flex-1 p-8 overflow-auto">
+        <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-auto">
           {activeTab === "overview" && (
-            <div className="space-y-6">
+            <div className="space-y-4 md:space-y-6">
               {/* Stats Cards */}
-              <div className="grid md:grid-cols-4 gap-6">
-                <Card className="p-6 rounded-3xl border-0 shadow-lg">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 md:gap-6">
+                <Card className="p-3 md:p-6 rounded-3xl border-0 shadow-lg">
                   <div className="flex items-center justify-between mb-4">
                     <div className="w-12 h-12 rounded-2xl bg-[#d1fae5] flex items-center justify-center">
                       <Package className="w-6 h-6 text-[#047857]" />
                     </div>
                     <TrendingUp className="w-5 h-5 text-[#10b981]" />
                   </div>
-                  <div className="text-3xl font-bold mb-1">{isDonationsLoading ? "-" : totalDonations}</div>
-                  <div className="text-gray-600">Total Donations</div>
+                  <div className="text-2xl md:text-3xl font-bold mb-1">{isDonationsLoading ? "-" : totalDonations}</div>
+                  <div className="text-xs md:text-sm text-gray-600">Total Donations</div>
                 </Card>
 
-                <Card className="p-6 rounded-3xl border-0 shadow-lg">
+                <Card className="p-3 md:p-6 rounded-3xl border-0 shadow-lg">
                   <div className="flex items-center justify-between mb-4">
                     <div className="w-12 h-12 rounded-2xl bg-[#dbeafe] flex items-center justify-center">
                       <Utensils className="w-6 h-6 text-[#1d4ed8]" />
                     </div>
                     <TrendingUp className="w-5 h-5 text-[#3b82f6]" />
                   </div>
-                  <div className="text-3xl font-bold mb-1">{isDonationsLoading ? "-" : mealsSaved}</div>
-                  <div className="text-gray-600">Meals Saved</div>
+                  <div className="text-2xl md:text-3xl font-bold mb-1">{isDonationsLoading ? "-" : mealsSaved}</div>
+                  <div className="text-xs md:text-sm text-gray-600">Meals Saved</div>
                 </Card>
 
-                <Card className="p-6 rounded-3xl border-0 shadow-lg">
+                <Card className="p-3 md:p-6 rounded-3xl border-0 shadow-lg">
                   <div className="flex items-center justify-between mb-4">
                     <div className="w-12 h-12 rounded-2xl bg-[#fed7aa] flex items-center justify-center">
                       <Clock className="w-6 h-6 text-[#c2410c]" />
                     </div>
                   </div>
-                  <div className="text-3xl font-bold mb-1">{isDonationsLoading ? "-" : activeDonations}</div>
-                  <div className="text-gray-600">Active Donations</div>
+                  <div className="text-2xl md:text-3xl font-bold mb-1">{isDonationsLoading ? "-" : activeDonations}</div>
+                  <div className="text-xs md:text-sm text-gray-600">Active Donations</div>
                 </Card>
 
-                <Card className="p-6 rounded-3xl border-0 shadow-lg">
+                <Card className="p-3 md:p-6 rounded-3xl border-0 shadow-lg">
                   <div className="flex items-center justify-between mb-4">
                     <div className="w-12 h-12 rounded-2xl bg-[#e9d5ff] flex items-center justify-center">
                       <CheckCircle2 className="w-6 h-6 text-[#6d28d9]" />
                     </div>
                   </div>
-                  <div className="text-3xl font-bold mb-1">{isDonationsLoading ? "-" : `${successRate}%`}</div>
-                  <div className="text-gray-600">Success Rate</div>
+                  <div className="text-2xl md:text-3xl font-bold mb-1">{isDonationsLoading ? "-" : `${successRate}%`}</div>
+                  <div className="text-xs md:text-sm text-gray-600">Success Rate</div>
                 </Card>
               </div>
 
