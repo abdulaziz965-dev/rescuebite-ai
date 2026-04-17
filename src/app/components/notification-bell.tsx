@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Bell, CheckCheck, ChevronDown, ExternalLink } from "lucide-react";
+import { useLocation, useNavigate } from "react-router";
 import { onAuthStateChanged } from "firebase/auth";
 import { collection, onSnapshot } from "firebase/firestore";
 import { auth, db } from "../../firebase/config";
@@ -9,6 +10,8 @@ import { Badge } from "./ui/badge";
 import { Card } from "./ui/card";
 
 export function NotificationBell({ audienceRole }: { audienceRole: NotificationAudienceRole }) {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [currentUserUid, setCurrentUserUid] = useState<string | null>(auth.currentUser?.uid || null);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [open, setOpen] = useState(false);
@@ -69,6 +72,67 @@ export function NotificationBell({ audienceRole }: { audienceRole: NotificationA
     }
   };
 
+  const resolveNotificationDestination = (notification: AppNotification) => {
+    const link = typeof notification.link === "string" ? notification.link.trim() : "";
+    if (link) {
+      return link;
+    }
+
+    const source = (notification.source || "").toLowerCase();
+    if (source.includes("donor")) {
+      return "/donor";
+    }
+    if (source.includes("receiver")) {
+      return "/receiver";
+    }
+    if (source.includes("volunteer")) {
+      return "/volunteer";
+    }
+    if (source.includes("admin") || source.includes("ai")) {
+      return "/admin";
+    }
+
+    if (audienceRole === "donor") {
+      return "/donor";
+    }
+    if (audienceRole === "receiver") {
+      return "/receiver";
+    }
+    if (audienceRole === "volunteer") {
+      return "/volunteer";
+    }
+    if (audienceRole === "admin") {
+      return "/admin";
+    }
+
+    return "/login";
+  };
+
+  const handleOpenNotification = async (notification: AppNotification) => {
+    const destination = resolveNotificationDestination(notification);
+
+    if (currentUserUid) {
+      await handleMarkRead(notification.id);
+    }
+
+    setOpen(false);
+    if (/^https?:\/\//i.test(destination)) {
+      window.open(destination, "_blank", "noopener,noreferrer");
+      return;
+    }
+
+    const destinationPath = destination.startsWith("/") ? destination : `/${destination}`;
+    const normalizedCurrentPath = location.pathname.replace(/\/$/, "") || "/";
+    const normalizedDestinationPath = destinationPath.replace(/\/$/, "") || "/";
+
+    if (normalizedCurrentPath === normalizedDestinationPath) {
+      navigate(`${destinationPath}?notification=${notification.id}`);
+      return;
+    }
+
+    navigate(destinationPath);
+  };
+
   return (
     <div className="relative">
       <Button
@@ -111,29 +175,36 @@ export function NotificationBell({ audienceRole }: { audienceRole: NotificationA
                       className={`p-4 border-b border-gray-100 ${isRead ? "bg-white" : "bg-[#f8fafc]"}`}
                     >
                       <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
+                        <button
+                          type="button"
+                          className="min-w-0 flex-1 text-left"
+                          onClick={() => void handleOpenNotification(notification)}
+                          title="Open notification"
+                        >
                           <div className="font-medium text-sm">{notification.title}</div>
                           <div className="text-sm text-gray-600 mt-1">{notification.message}</div>
                           <div className="text-xs text-gray-400 mt-2">
                             {notification.createdAt?.toDate?.()?.toLocaleString() || "Just now"}
                           </div>
-                        </div>
+                        </button>
                         <div className="flex items-center gap-2 shrink-0">
-                          {notification.link && (
-                            <a
-                              href={notification.link}
-                              className="text-[#10b981] hover:text-[#047857]"
-                              title="Open link"
-                            >
-                              <ExternalLink className="w-4 h-4" />
-                            </a>
-                          )}
+                          <button
+                            type="button"
+                            className="text-[#10b981] hover:text-[#047857]"
+                            title="Open details"
+                            onClick={() => void handleOpenNotification(notification)}
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                          </button>
                           {!isRead && currentUserUid && (
                             <button
                               type="button"
                               className="text-[#10b981] hover:text-[#047857]"
                               title="Mark as read"
-                              onClick={() => handleMarkRead(notification.id)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void handleMarkRead(notification.id);
+                              }}
                             >
                               <CheckCheck className="w-4 h-4" />
                             </button>

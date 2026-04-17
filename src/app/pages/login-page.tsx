@@ -30,6 +30,7 @@ import {
   signInWithEmailAndPassword,
   signOut,
   updateProfile,
+  onAuthStateChanged,
 } from "firebase/auth";
 import { auth, db } from "../../firebase/config";
 
@@ -46,6 +47,36 @@ const ALLOWED_EMAIL_DOMAINS = new Set([
   "aol.com",
   "zoho.com",
 ]);
+
+const isMobileOrEmbeddedBrowser = () => {
+  if (typeof navigator === "undefined" || typeof window === "undefined") {
+    return false;
+  }
+
+  const userAgent = (navigator.userAgent || "").toLowerCase();
+  
+  // Check for mobile operating systems
+  const mobileOSPatterns = /android|iphone|ipad|ipod|ios|windows phone|blackberry|palm|webos|opera mini/i;
+  if (mobileOSPatterns.test(userAgent)) {
+    return true;
+  }
+
+  // Check for embedded/in-app browsers
+  const embeddedBrowserPatterns = /fban|fbav|instagram|line|twitter|snapchat|tiktok|wechat|whatsapp|telegram|discord|slack|webview/i;
+  if (embeddedBrowserPatterns.test(userAgent)) {
+    return true;
+  }
+
+  // Check screen size as fallback (touch device)
+  if (typeof window.matchMedia === "function") {
+    const isTouchDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+    if (isTouchDevice) {
+      return true;
+    }
+  }
+
+  return false;
+};
 
 const isAllowedEmailService = (email: string) => {
   const parts = email.toLowerCase().split("@");
@@ -164,19 +195,61 @@ export function LoginPage() {
   }, []);
 
   useEffect(() => {
+    let isMounted = true;
+
     const restoreGoogleRedirect = async () => {
       try {
+        // First, check if there's a pending redirect result
         const result = await getRedirectResult(auth);
-        if (result?.user) {
+        if (result?.user && isMounted) {
+          console.log("Redirect result received:", result.user.email);
           await continueGoogleSignIn(result.user);
+          return;
         }
-      } catch {
-        // Ignore redirect restore issues here; the sign-in button handles messaging.
+
+        // If no redirect result, check if user is already authenticated
+        if (auth.currentUser && isMounted) {
+          console.log("User already authenticated:", auth.currentUser.email);
+          const userDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
+          if (userDoc.exists() && userDoc.data().role) {
+            navigate(resolveRoleLink(userDoc.data().role as string));
+            return;
+          }
+          // User exists but no role set yet - continue onboarding
+          await continueGoogleSignIn(auth.currentUser);
+          return;
+        }
+      } catch (error: any) {
+        if (!isMounted) return;
+
+        console.error("Redirect result error:", error?.code, error?.message);
+
+        if (error?.code === "auth/unauthorized-domain") {
+          setMessage(
+            "Google sign-in is blocked for this domain. Add your Vercel domain in Firebase Console > Authentication > Settings > Authorized domains."
+          );
+          return;
+        }
+
+        if (error?.code === "auth/operation-not-allowed") {
+          setMessage("Google sign-in is disabled in Firebase. Enable Google provider in Authentication > Sign-in method.");
+          return;
+        }
+
+        // Silent fail for other errors - user can try again
+        if (error?.code) {
+          console.error(`Google auth error: ${error.code}`);
+        }
       }
     };
 
     void restoreGoogleRedirect();
-  }, []);
+
+    // Cleanup
+    return () => {
+      isMounted = false;
+    };
+  }, [navigate]);
 
   const connectedNgoCount = useMemo(() => {
     return users.filter((user) => user.role === "receiver").length;
@@ -500,25 +573,54 @@ export function LoginPage() {
       );
 
       const provider = new GoogleAuthProvider();
+      const isAndroidOrIOS = isMobileOrEmbeddedBrowser();
+
+      console.log("Mobile detected:", isAndroidOrIOS, "User-Agent:", navigator.userAgent);
+
+      // Always try redirect on mobile first - it's more reliable
+      if (isAndroidOrIOS) {
+        console.log("Using redirect flow for mobile");
+        setMessage("Redirecting to Google Sign-In...");
+        // Don't set authLoading(false) here - let redirect handle navigation
+        await signInWithRedirect(auth, provider);
+        return;
+      }
+
+      // Try popup on desktop
       try {
+        console.log("Attempting popup sign-in");
         const result = await signInWithPopup(auth, provider);
+        setAuthLoading(false);
         await continueGoogleSignIn(result.user);
       } catch (error: any) {
+        console.error("Popup error:", error?.code, error?.message);
+
         if (error?.code === "auth/popup-blocked" || error?.code === "auth/popup-closed-by-user") {
-          setMessage("Popup was blocked. Continuing with redirect sign-in...");
+          console.log("Popup blocked/closed, falling back to redirect");
+          setMessage("Redirecting to Google Sign-In...");
+          // Don't set authLoading(false) here - let redirect handle it
           await signInWithRedirect(auth, provider);
           return;
         }
+
+        setAuthLoading(false);
 
         if (error?.code === "auth/unauthorized-domain") {
           setMessage("This domain is not authorized in Firebase Auth. Add your Vercel domain in Firebase Console → Authentication → Settings → Authorized domains.");
           return;
         }
 
-        setMessage("Google sign-in failed. Please try again.");
+        if (error?.code === "auth/operation-not-allowed") {
+          setMessage("Google sign-in is disabled. Enable it in Firebase Console → Authentication → Sign-in method.");
+          return;
+        }
+
+        setMessage("Google sign-in failed. Please try again or use email/password login.");
       }
-    } finally {
+    } catch (error: any) {
       setAuthLoading(false);
+      console.error("Auth setup error:", error);
+      setMessage("Failed to initialize sign-in. Please refresh and try again.");
     }
   };
 

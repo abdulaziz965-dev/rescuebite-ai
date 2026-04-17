@@ -4,7 +4,8 @@ import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 import { NotificationBell } from "../components/notification-bell";
-import { Sheet, SheetContent, SheetTrigger } from "../components/ui/sheet";
+import { GlobalSidebar } from "../components/global-sidebar";
+import { DashboardLayout } from "../components/dashboard-layout";
 import {
   Home,
   Users,
@@ -417,74 +418,9 @@ export function AdminDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col lg:flex-row">
-      <aside className="hidden lg:flex lg:w-72 bg-white border-r border-gray-200 p-6 flex-col">
-        <div className="flex items-center gap-2 mb-8">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#10b981] to-[#3b82f6] flex items-center justify-center">
-            <Utensils className="w-6 h-6 text-white" />
-          </div>
-          <span className="text-xl font-semibold">RescueBite AI</span>
-        </div>
-
-        <nav className="flex-1 space-y-2">
-          <button
-            onClick={() => setActiveTab("overview")}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
-              activeTab === "overview" ? "bg-[#10b981] text-white" : "text-gray-600 hover:bg-gray-100"
-            }`}
-          >
-            <Home className="w-5 h-5" />
-            <span>Overview</span>
-          </button>
-          <button
-            onClick={() => setActiveTab("users")}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
-              activeTab === "users" ? "bg-[#10b981] text-white" : "text-gray-600 hover:bg-gray-100"
-            }`}
-          >
-            <Users className="w-5 h-5" />
-            <span>User Management</span>
-          </button>
-          <button
-            onClick={() => setActiveTab("donations")}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
-              activeTab === "donations" ? "bg-[#10b981] text-white" : "text-gray-600 hover:bg-gray-100"
-            }`}
-          >
-            <Package className="w-5 h-5" />
-            <span>Donations</span>
-          </button>
-          <button
-            onClick={() => setActiveTab("analytics")}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
-              activeTab === "analytics" ? "bg-[#10b981] text-white" : "text-gray-600 hover:bg-gray-100"
-            }`}
-          >
-            <TrendingUp className="w-5 h-5" />
-            <span>Analytics</span>
-          </button>
-          <button
-            onClick={() => setActiveTab("settings")}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
-              activeTab === "settings" ? "bg-[#10b981] text-white" : "text-gray-600 hover:bg-gray-100"
-            }`}
-          >
-            <Settings className="w-5 h-5" />
-            <span>Settings</span>
-          </button>
-        </nav>
-
-        <div className="border-t border-gray-200 pt-4">
-          <Link to="/">
-            <button className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-gray-600 hover:bg-gray-100 transition-all">
-              <LogOut className="w-5 h-5" />
-              <span>Back to Home</span>
-            </button>
-          </Link>
-        </div>
-      </aside>
-
-      <div className="flex-1 flex flex-col">
+    <>
+      <GlobalSidebar role="admin" activeTab={activeTab} onTabChange={(tab: string) => setActiveTab(tab as any)} />
+      <DashboardLayout>
         <header className="bg-white border-b border-gray-200 px-4 md:px-6 lg:px-8 py-2 md:py-4">
           <div className="flex items-center justify-between">
             <div className="flex-1">
@@ -502,79 +438,6 @@ export function AdminDashboard() {
                   <div className="text-xs text-gray-600">Administrator</div>
                 </div>
               </div>
-              {/* Mobile Menu Button */}
-              <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
-                <SheetTrigger asChild>
-                  <button className="lg:hidden p-2 hover:bg-gray-100 rounded-lg">
-                    {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-                  </button>
-                </SheetTrigger>
-                <SheetContent side="left" className="p-0 w-72">
-                  <div className="p-6 h-full flex flex-col">
-                    <div className="flex items-center gap-2 mb-8">
-                      <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#10b981] to-[#3b82f6] flex items-center justify-center">
-                        <Utensils className="w-6 h-6 text-white" />
-                      </div>
-                      <span className="text-xl font-semibold">RescueBite AI</span>
-                    </div>
-                    <nav className="flex-1 space-y-2">
-                      <button
-                        onClick={() => { setActiveTab("overview"); setIsMobileMenuOpen(false); }}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
-                          activeTab === "overview" ? "bg-[#10b981] text-white" : "text-gray-600 hover:bg-gray-100"
-                        }`}
-                      >
-                        <Home className="w-5 h-5" />
-                        <span>Overview</span>
-                      </button>
-                      <button
-                        onClick={() => { setActiveTab("users"); setIsMobileMenuOpen(false); }}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
-                          activeTab === "users" ? "bg-[#10b981] text-white" : "text-gray-600 hover:bg-gray-100"
-                        }`}
-                      >
-                        <Users className="w-5 h-5" />
-                        <span>User Management</span>
-                      </button>
-                      <button
-                        onClick={() => { setActiveTab("donations"); setIsMobileMenuOpen(false); }}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
-                          activeTab === "donations" ? "bg-[#10b981] text-white" : "text-gray-600 hover:bg-gray-100"
-                        }`}
-                      >
-                        <Package className="w-5 h-5" />
-                        <span>Donations</span>
-                      </button>
-                      <button
-                        onClick={() => { setActiveTab("analytics"); setIsMobileMenuOpen(false); }}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
-                          activeTab === "analytics" ? "bg-[#10b981] text-white" : "text-gray-600 hover:bg-gray-100"
-                        }`}
-                      >
-                        <TrendingUp className="w-5 h-5" />
-                        <span>Analytics</span>
-                      </button>
-                      <button
-                        onClick={() => { setActiveTab("settings"); setIsMobileMenuOpen(false); }}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
-                          activeTab === "settings" ? "bg-[#10b981] text-white" : "text-gray-600 hover:bg-gray-100"
-                        }`}
-                      >
-                        <Settings className="w-5 h-5" />
-                        <span>Settings</span>
-                      </button>
-                    </nav>
-                    <div className="border-t border-gray-200 pt-4">
-                      <Link to="/">
-                        <button className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-gray-600 hover:bg-gray-100 transition-all">
-                          <LogOut className="w-5 h-5" />
-                          <span>Back to Home</span>
-                        </button>
-                      </Link>
-                    </div>
-                  </div>
-                </SheetContent>
-              </Sheet>
             </div>
           </div>
         </header>
@@ -582,26 +445,22 @@ export function AdminDashboard() {
         <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-auto">
           {activeTab === "overview" && (
             <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-6 mb-6 md:mb-8">
-                <Card className="p-3 md:p-6 rounded-3xl border-0 shadow-lg">
-                  <div className="text-2xl md:text-3xl font-bold mb-1">{loading ? "-" : analytics.totalDonations}</div>
+              <div className="grid grid-cols-4 gap-2 md:gap-6 mb-6 md:mb-8">
+                <Card className="p-2 md:p-6 rounded-2xl md:rounded-3xl border-0 shadow-lg">
+                  <div className="text-lg md:text-3xl font-bold mb-1">{loading ? "-" : analytics.totalDonations}</div>
                   <div className="text-xs md:text-sm text-gray-600">Total Donations</div>
                 </Card>
-                <Card className="p-3 md:p-6 rounded-3xl border-0 shadow-lg">
-                  <div className="text-2xl md:text-3xl font-bold mb-1">{loading ? "-" : analytics.claimedDonations}</div>
+                <Card className="p-2 md:p-6 rounded-2xl md:rounded-3xl border-0 shadow-lg">
+                  <div className="text-lg md:text-3xl font-bold mb-1">{loading ? "-" : analytics.claimedDonations}</div>
                   <div className="text-xs md:text-sm text-gray-600">Claimed Orders</div>
                 </Card>
-                <Card className="p-3 md:p-6 rounded-3xl border-0 shadow-lg">
-                  <div className="text-2xl md:text-3xl font-bold mb-1">{loading ? "-" : analytics.completedDeliveries}</div>
-                  <div className="text-xs md:text-sm text-gray-600">Completed Deliveries</div>
+                <Card className="p-2 md:p-6 rounded-2xl md:rounded-3xl border-0 shadow-lg">
+                  <div className="text-lg md:text-3xl font-bold mb-1">{loading ? "-" : analytics.completedDeliveries}</div>
+                  <div className="text-xs md:text-sm text-gray-600">Completed</div>
                 </Card>
-                <Card className="p-3 md:p-6 rounded-3xl border-0 shadow-lg">
-                  <div className="text-2xl md:text-3xl font-bold mb-1">{loading ? "-" : analytics.mealsSaved}</div>
-                  <div className="text-xs md:text-sm text-gray-600">Meals Saved</div>
-                </Card>
-                <Card className="p-3 md:p-6 rounded-3xl border-0 shadow-lg">
-                  <div className="text-2xl md:text-3xl font-bold mb-1">{loading ? "-" : `${analytics.successRate}%`}</div>
-                  <div className="text-xs md:text-sm text-gray-600">Success Rate</div>
+                <Card className="p-2 md:p-6 rounded-2xl md:rounded-3xl border-0 shadow-lg">
+                  <div className="text-lg md:text-3xl font-bold mb-1">{loading ? "-" : `${analytics.successRate}%`}</div>
+                  <div className="text-xs md:text-sm text-gray-600">Success</div>
                 </Card>
               </div>
 
@@ -1062,7 +921,7 @@ export function AdminDashboard() {
             </div>
           )}
         </main>
-      </div>
-    </div>
+      </DashboardLayout>
+    </>
   );
 }

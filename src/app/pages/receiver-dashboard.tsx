@@ -7,7 +7,8 @@ import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
 import { Badge } from "../components/ui/badge";
 import { NotificationBell } from "../components/notification-bell";
-import { Sheet, SheetContent, SheetTrigger } from "../components/ui/sheet";
+import { GlobalSidebar } from "../components/global-sidebar";
+import { DashboardLayout } from "../components/dashboard-layout";
 import {
   Home,
   Search,
@@ -485,18 +486,21 @@ export function ReceiverDashboard() {
               title: "New claim submitted",
               message: `${receiverDisplayName} submitted proof for ${claimDraftDonation.foodName}.`,
               source: "receiver-dashboard",
+              link: "/donor",
             })
           : sendNotification({
               recipientRole: "donor",
               title: "New claim submitted",
               message: `${receiverDisplayName} submitted proof for ${claimDraftDonation.foodName}.`,
               source: "receiver-dashboard",
+              link: "/donor",
             }),
         sendNotification({
           recipientRole: "admin",
           title: "Receiver claim proof received",
           message: `${receiverDisplayName} submitted a verified claim for ${claimDraftDonation.foodName}.`,
           source: "receiver-dashboard",
+          link: "/admin",
         }),
       ]);
 
@@ -669,96 +673,10 @@ export function ReceiverDashboard() {
   };
 
   return (
-    <div className={`min-h-screen flex flex-col lg:flex-row ${themeMode === "dark" ? "bg-slate-950 text-slate-100" : "bg-gray-50"}`}>
-      <aside className={`hidden lg:flex lg:w-72 border-r p-6 flex-col ${themeMode === "dark" ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200"}`}>
-        <div className="flex items-center gap-2 mb-8">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#10b981] to-[#3b82f6] flex items-center justify-center">
-            <Utensils className="w-6 h-6 text-white" />
-          </div>
-          <span className="text-xl font-semibold">RescueBite AI</span>
-        </div>
-
-        <nav className="flex-1 space-y-2">
-          <button
-            onClick={() => setActiveTab("available")}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
-              activeTab === "available"
-                ? "bg-[#10b981] text-white"
-                : themeMode === "dark"
-                ? "text-slate-200 hover:bg-slate-800"
-                : "text-gray-600 hover:bg-gray-100"
-            }`}
-          >
-            <Home className="w-5 h-5" />
-            <span>Available Food</span>
-          </button>
-          <button
-            onClick={() => setActiveTab("history")}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
-              activeTab === "history"
-                ? "bg-[#10b981] text-white"
-                : themeMode === "dark"
-                ? "text-slate-200 hover:bg-slate-800"
-                : "text-gray-600 hover:bg-gray-100"
-            }`}
-          >
-            <History className="w-5 h-5" />
-            <span>Claimed History</span>
-          </button>
-          <button
-            onClick={() => setActiveTab("map")}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
-              activeTab === "map"
-                ? "bg-[#10b981] text-white"
-                : themeMode === "dark"
-                ? "text-slate-200 hover:bg-slate-800"
-                : "text-gray-600 hover:bg-gray-100"
-            }`}
-          >
-            <MapPin className="w-5 h-5" />
-            <span>Map View</span>
-          </button>
-          <button
-            onClick={() => setActiveTab("settings")}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
-              activeTab === "settings"
-                ? "bg-[#10b981] text-white"
-                : themeMode === "dark"
-                ? "text-slate-200 hover:bg-slate-800"
-                : "text-gray-600 hover:bg-gray-100"
-            }`}
-          >
-            <Settings className="w-5 h-5" />
-            <span>Settings</span>
-          </button>
-          {(claimDraftDonation || activeTab === "proof") && (
-            <button
-              onClick={() => setActiveTab("proof")}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
-                activeTab === "proof"
-                  ? "bg-[#10b981] text-white"
-                  : themeMode === "dark"
-                  ? "text-slate-200 hover:bg-slate-800"
-                  : "text-gray-600 hover:bg-gray-100"
-              }`}
-            >
-              <CheckCircle2 className="w-5 h-5" />
-              <span>Claim Proof</span>
-            </button>
-          )}
-        </nav>
-
-        <div className="border-t border-gray-200 pt-4">
-          <Link to="/">
-            <button className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-gray-600 hover:bg-gray-100 transition-all">
-              <LogOut className="w-5 h-5" />
-              <span>Back to Home</span>
-            </button>
-          </Link>
-        </div>
-      </aside>
-
-      <div className="flex-1 flex flex-col">
+    <>
+      <GlobalSidebar role="receiver" activeTab={activeTab} onTabChange={(tab: string) => setActiveTab(tab as any)} />
+      <DashboardLayout>
+        {/* Top Bar */}
         <header className={`border-b px-4 md:px-6 lg:px-8 py-2 md:py-4 ${themeMode === "dark" ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200"}`}>
           <div className="flex items-center justify-between">
             <div className="flex-1">
@@ -776,32 +694,6 @@ export function ReceiverDashboard() {
                   <div className="text-xs text-gray-600">{receiverType === "ngo" ? "NGO Receiver" : "Receiver"}</div>
                 </div>
               </div>
-              <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
-                <SheetTrigger asChild>
-                  <button className="lg:hidden p-2 hover:bg-gray-100 rounded-lg">
-                    {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-                  </button>
-                </SheetTrigger>
-                <SheetContent side="left" className="p-0 w-72">
-                  <div className="p-6 h-full flex flex-col">
-                    <div className="flex items-center gap-2 mb-8">
-                      <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#10b981] to-[#3b82f6] flex items-center justify-center">
-                        <Utensils className="w-6 h-6 text-white" />
-                      </div>
-                      <span className="text-xl font-semibold">RescueBite AI</span>
-                    </div>
-                    {renderSidebarNav(() => setIsMobileMenuOpen(false))}
-                    <div className="border-t border-gray-200 pt-4">
-                      <Link to="/">
-                        <button className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-gray-600 hover:bg-gray-100 transition-all">
-                          <LogOut className="w-5 h-5" />
-                          <span>Back to Home</span>
-                        </button>
-                      </Link>
-                    </div>
-                  </div>
-                </SheetContent>
-              </Sheet>
             </div>
           </div>
         </header>
@@ -1144,8 +1036,8 @@ export function ReceiverDashboard() {
                   <>
                     <div className="mb-5">
                       <div className="text-sm text-gray-500">Selected Donation</div>
-                      <div className="text-lg font-semibold">{claimDraftDonation.foodName}</div>
-                      <div className="text-sm text-gray-600">{claimDraftDonation.quantity} • {claimDraftDonation.address}</div>
+                      <div className="text-lg font-semibold">{claimDraftDonation?.foodName}</div>
+                      <div className="text-sm text-gray-600">{claimDraftDonation?.quantity} • {claimDraftDonation?.address}</div>
                     </div>
 
                     <div className="space-y-5">
@@ -1460,7 +1352,7 @@ export function ReceiverDashboard() {
             </div>
           )}
         </main>
-      </div>
-    </div>
+      </DashboardLayout>
+    </>
   );
 }

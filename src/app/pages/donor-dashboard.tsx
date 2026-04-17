@@ -8,7 +8,8 @@ import { Textarea } from "../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Badge } from "../components/ui/badge";
 import { NotificationBell } from "../components/notification-bell";
-import { Sheet, SheetContent, SheetTrigger } from "../components/ui/sheet";
+import { GlobalSidebar } from "../components/global-sidebar";
+import { DashboardLayout } from "../components/dashboard-layout";
 import { 
   Home, 
   Upload, 
@@ -43,6 +44,7 @@ type Donation = {
   expiryTime: string;
   urgency: string;
   address: string;
+  image?: string;
   claimed?: boolean;
   createdAt?: { toDate?: () => Date };
   donorUid?: string;
@@ -106,6 +108,7 @@ export function DonorDashboard() {
   const [isRoleSwitching, setIsRoleSwitching] = useState(false);
   const [roleSwitchMessage, setRoleSwitchMessage] = useState("");
   const [isProofViewerOpen, setIsProofViewerOpen] = useState(false);
+  const [donationImage, setDonationImage] = useState("");
   const [selectedProofImages, setSelectedProofImages] = useState<string[]>([]);
   const [selectedProofDonationName, setSelectedProofDonationName] = useState("");
   const [selectedProofReceiverLabel, setSelectedProofReceiverLabel] = useState("");
@@ -196,6 +199,7 @@ export function DonorDashboard() {
             expiryTime: data.expiryTime || "",
             urgency: data.urgency || "",
             address: data.address || "",
+            image: typeof data.image === "string" ? data.image : "",
             claimed: data.claimed || false,
             createdAt: data.createdAt,
             donorUid: data.donorUid,
@@ -503,6 +507,7 @@ export function DonorDashboard() {
         expiryTime: combinedExpiryDateTime,
         urgency,
         address,
+        image: donationImage || null,
         donorUid: auth.currentUser?.uid || null,
         donorEmail: auth.currentUser?.email || null,
         claimed: false,
@@ -543,6 +548,7 @@ export function DonorDashboard() {
       setExpiryTime("");
       setUrgency("");
       setAddress("");
+      setDonationImage("");
 
       // Clear success message after 3 seconds
       setTimeout(() => {
@@ -554,6 +560,26 @@ export function DonorDashboard() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleDonationImageSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    const encodedImage = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+      reader.onerror = () => reject(new Error("image-read-failed"));
+      reader.readAsDataURL(file);
+    });
+
+    if (encodedImage.startsWith("data:image/")) {
+      setDonationImage(encodedImage);
+    }
+
+    event.target.value = "";
   };
 
   const handleSaveProfileSettings = async () => {
@@ -646,6 +672,7 @@ export function DonorDashboard() {
         title: "New report submitted",
         message: `${auth.currentUser?.displayName || auth.currentUser?.email || "A donor"} reported ${selectedTarget.name}.`,
         source: "donor-dashboard",
+        link: "/admin",
       });
 
       setReportMessage("Report submitted successfully. Our team will review it shortly.");
@@ -706,85 +733,9 @@ export function DonorDashboard() {
   };
 
   return (
-    <div className={`min-h-screen flex flex-col lg:flex-row ${themeMode === "dark" ? "bg-slate-950 text-slate-100" : "bg-gray-50"}`}>
-      {/* Sidebar - Hidden on mobile, visible on lg */}
-      <aside className={`hidden lg:flex lg:w-72 border-r p-6 flex-col ${themeMode === "dark" ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200"}`}>
-        <div className="flex items-center gap-2 mb-8">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#10b981] to-[#3b82f6] flex items-center justify-center">
-            <Utensils className="w-6 h-6 text-white" />
-          </div>
-          <span className="text-xl font-semibold">RescueBite AI</span>
-        </div>
-
-        <nav className="flex-1 space-y-2">
-          <button
-            onClick={() => setActiveTab("overview")}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
-              activeTab === "overview" ? "bg-[#10b981] text-white" : "text-gray-600 hover:bg-gray-100"
-            }`}
-          >
-            <Home className="w-5 h-5" />
-            <span>Overview</span>
-          </button>
-          <button
-            onClick={() => setActiveTab("donate")}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
-              activeTab === "donate" ? "bg-[#10b981] text-white" : "text-gray-600 hover:bg-gray-100"
-            }`}
-          >
-            <Upload className="w-5 h-5" />
-            <span>New Donation</span>
-          </button>
-          <button
-            onClick={() => setActiveTab("history")}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
-              activeTab === "history" ? "bg-[#10b981] text-white" : "text-gray-600 hover:bg-gray-100"
-            }`}
-          >
-            <Package className="w-5 h-5" />
-            <span>My Donations</span>
-          </button>
-          <button
-            onClick={() => setActiveTab("analytics")}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
-              activeTab === "analytics" ? "bg-[#10b981] text-white" : "text-gray-600 hover:bg-gray-100"
-            }`}
-          >
-            <BarChart3 className="w-5 h-5" />
-            <span>Analytics</span>
-          </button>
-          <button
-            onClick={() => setActiveTab("ngos")}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
-              activeTab === "ngos" ? "bg-[#10b981] text-white" : "text-gray-600 hover:bg-gray-100"
-            }`}
-          >
-            <Building2 className="w-5 h-5" />
-            <span>Find NGOs</span>
-          </button>
-          <button
-            onClick={() => setActiveTab("settings")}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
-              activeTab === "settings" ? "bg-[#10b981] text-white" : "text-gray-600 hover:bg-gray-100"
-            }`}
-          >
-            <Settings className="w-5 h-5" />
-            <span>Settings</span>
-          </button>
-        </nav>
-
-        <div className="border-t border-gray-200 pt-4">
-          <Link to="/">
-            <button className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-gray-600 hover:bg-gray-100 transition-all">
-              <LogOut className="w-5 h-5" />
-              <span>Back to Home</span>
-            </button>
-          </Link>
-        </div>
-      </aside>
-
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col">
+    <>
+      <GlobalSidebar role="donor" activeTab={activeTab} onTabChange={setActiveTab} />
+      <DashboardLayout>
         {/* Top Bar */}
         <header className={`border-b px-4 md:px-6 lg:px-8 py-2 md:py-4 ${themeMode === "dark" ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200"}`}>
           <div className="flex items-center justify-between">
@@ -803,88 +754,6 @@ export function DonorDashboard() {
                   <div className="text-xs text-gray-600">Donor</div>
                 </div>
               </div>
-              {/* Mobile Menu Button */}
-              <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
-                <SheetTrigger asChild>
-                  <button className="lg:hidden p-2 hover:bg-gray-100 rounded-lg">
-                    {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-                  </button>
-                </SheetTrigger>
-                <SheetContent side="left" className="p-0 w-72">
-                  <div className="p-6 h-full flex flex-col">
-                    <div className="flex items-center gap-2 mb-8">
-                      <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#10b981] to-[#3b82f6] flex items-center justify-center">
-                        <Utensils className="w-6 h-6 text-white" />
-                      </div>
-                      <span className="text-xl font-semibold">RescueBite AI</span>
-                    </div>
-                    <nav className="flex-1 space-y-2">
-                      <button
-                        onClick={() => { setActiveTab("overview"); setIsMobileMenuOpen(false); }}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
-                          activeTab === "overview" ? "bg-[#10b981] text-white" : "text-gray-600 hover:bg-gray-100"
-                        }`}
-                      >
-                        <Home className="w-5 h-5" />
-                        <span>Overview</span>
-                      </button>
-                      <button
-                        onClick={() => { setActiveTab("donate"); setIsMobileMenuOpen(false); }}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
-                          activeTab === "donate" ? "bg-[#10b981] text-white" : "text-gray-600 hover:bg-gray-100"
-                        }`}
-                      >
-                        <Upload className="w-5 h-5" />
-                        <span>New Donation</span>
-                      </button>
-                      <button
-                        onClick={() => { setActiveTab("history"); setIsMobileMenuOpen(false); }}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
-                          activeTab === "history" ? "bg-[#10b981] text-white" : "text-gray-600 hover:bg-gray-100"
-                        }`}
-                      >
-                        <Package className="w-5 h-5" />
-                        <span>My Donations</span>
-                      </button>
-                      <button
-                        onClick={() => { setActiveTab("analytics"); setIsMobileMenuOpen(false); }}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
-                          activeTab === "analytics" ? "bg-[#10b981] text-white" : "text-gray-600 hover:bg-gray-100"
-                        }`}
-                      >
-                        <BarChart3 className="w-5 h-5" />
-                        <span>Analytics</span>
-                      </button>
-                      <button
-                        onClick={() => { setActiveTab("ngos"); setIsMobileMenuOpen(false); }}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
-                          activeTab === "ngos" ? "bg-[#10b981] text-white" : "text-gray-600 hover:bg-gray-100"
-                        }`}
-                      >
-                        <Building2 className="w-5 h-5" />
-                        <span>Find NGOs</span>
-                      </button>
-                      <button
-                        onClick={() => { setActiveTab("settings"); setIsMobileMenuOpen(false); }}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
-                          activeTab === "settings" ? "bg-[#10b981] text-white" : "text-gray-600 hover:bg-gray-100"
-                        }`}
-                      >
-                        <Settings className="w-5 h-5" />
-                        <span>Settings</span>
-                      </button>
-                    </nav>
-                    <div className="border-t border-gray-200 pt-4">
-                      <Link to="/">
-                        <button className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-gray-600 hover:bg-gray-100 transition-all">
-                          <LogOut className="w-5 h-5" />
-                          <span>Back to Home</span>
-                        </button>
-                      </Link>
-                    </div>
-                  </div>
-                </SheetContent>
-              </Sheet>
             </div>
           </div>
         </header>
@@ -894,47 +763,47 @@ export function DonorDashboard() {
           {activeTab === "overview" && (
             <div className="space-y-4 md:space-y-6">
               {/* Stats Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 md:gap-6">
-                <Card className="p-3 md:p-6 rounded-3xl border-0 shadow-lg">
+              <div className="grid grid-cols-4 gap-2 md:gap-6">
+                <Card className="p-2 md:p-6 rounded-2xl md:rounded-3xl border-0 shadow-lg">
                   <div className="flex items-center justify-between mb-4">
                     <div className="w-12 h-12 rounded-2xl bg-[#d1fae5] flex items-center justify-center">
                       <Package className="w-6 h-6 text-[#047857]" />
                     </div>
                     <TrendingUp className="w-5 h-5 text-[#10b981]" />
                   </div>
-                  <div className="text-2xl md:text-3xl font-bold mb-1">{isDonationsLoading ? "-" : totalDonations}</div>
-                  <div className="text-xs md:text-sm text-gray-600">Total Donations</div>
+                  <div className="text-lg md:text-3xl font-bold mb-1">{isDonationsLoading ? "-" : totalDonations}</div>
+                  <div className="text-xs text-gray-600">Total Donations</div>
                 </Card>
 
-                <Card className="p-3 md:p-6 rounded-3xl border-0 shadow-lg">
+                <Card className="p-2 md:p-6 rounded-2xl md:rounded-3xl border-0 shadow-lg">
                   <div className="flex items-center justify-between mb-4">
                     <div className="w-12 h-12 rounded-2xl bg-[#dbeafe] flex items-center justify-center">
                       <Utensils className="w-6 h-6 text-[#1d4ed8]" />
                     </div>
                     <TrendingUp className="w-5 h-5 text-[#3b82f6]" />
                   </div>
-                  <div className="text-2xl md:text-3xl font-bold mb-1">{isDonationsLoading ? "-" : mealsSaved}</div>
-                  <div className="text-xs md:text-sm text-gray-600">Meals Saved</div>
+                  <div className="text-lg md:text-3xl font-bold mb-1">{isDonationsLoading ? "-" : mealsSaved}</div>
+                  <div className="text-xs text-gray-600">Meals Saved</div>
                 </Card>
 
-                <Card className="p-3 md:p-6 rounded-3xl border-0 shadow-lg">
+                <Card className="p-2 md:p-6 rounded-2xl md:rounded-3xl border-0 shadow-lg">
                   <div className="flex items-center justify-between mb-4">
                     <div className="w-12 h-12 rounded-2xl bg-[#fed7aa] flex items-center justify-center">
                       <Clock className="w-6 h-6 text-[#c2410c]" />
                     </div>
                   </div>
-                  <div className="text-2xl md:text-3xl font-bold mb-1">{isDonationsLoading ? "-" : activeDonations}</div>
-                  <div className="text-xs md:text-sm text-gray-600">Active Donations</div>
+                  <div className="text-lg md:text-3xl font-bold mb-1">{isDonationsLoading ? "-" : activeDonations}</div>
+                  <div className="text-xs text-gray-600">Active Donations</div>
                 </Card>
 
-                <Card className="p-3 md:p-6 rounded-3xl border-0 shadow-lg">
+                <Card className="p-2 md:p-6 rounded-2xl md:rounded-3xl border-0 shadow-lg">
                   <div className="flex items-center justify-between mb-4">
                     <div className="w-12 h-12 rounded-2xl bg-[#e9d5ff] flex items-center justify-center">
                       <CheckCircle2 className="w-6 h-6 text-[#6d28d9]" />
                     </div>
                   </div>
-                  <div className="text-2xl md:text-3xl font-bold mb-1">{isDonationsLoading ? "-" : `${successRate}%`}</div>
-                  <div className="text-xs md:text-sm text-gray-600">Success Rate</div>
+                  <div className="text-lg md:text-3xl font-bold mb-1">{isDonationsLoading ? "-" : `${successRate}%`}</div>
+                  <div className="text-xs text-gray-600">Success Rate</div>
                 </Card>
               </div>
 
@@ -1176,12 +1045,35 @@ export function DonorDashboard() {
                 </div>
 
                 <div>
-                  <Label htmlFor="photo">Upload Photo</Label>
-                  <div className="mt-2 border-2 border-dashed border-gray-300 rounded-2xl p-8 text-center hover:border-[#10b981] transition-colors cursor-pointer">
-                    <Upload className="w-12 h-12 mx-auto mb-2 text-gray-400" />
-                    <p className="text-gray-600">Click to upload or drag and drop</p>
-                    <p className="text-sm text-gray-500 mt-1">PNG, JPG up to 10MB</p>
-                  </div>
+                  <Label htmlFor="donationPhoto">Upload Photo</Label>
+                  <input
+                    id="donationPhoto"
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleDonationImageSelected}
+                  />
+                  <label htmlFor="donationPhoto" className="mt-2 block border-2 border-dashed border-gray-300 rounded-2xl p-6 md:p-8 text-center hover:border-[#10b981] transition-colors cursor-pointer overflow-hidden">
+                    {donationImage ? (
+                      <div className="space-y-3">
+                        <img
+                          src={donationImage}
+                          alt="Selected donation preview"
+                          className="mx-auto w-full max-w-md h-52 object-cover rounded-2xl border border-gray-200"
+                        />
+                        <p className="text-sm text-gray-600">Click to replace the selected image</p>
+                      </div>
+                    ) : (
+                      <>
+                        <Upload className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+                        <p className="text-gray-600">Click to upload an image</p>
+                        <p className="text-sm text-gray-500 mt-1">PNG, JPG, JPEG, or WebP</p>
+                      </>
+                    )}
+                  </label>
+                  {donationImage && (
+                    <p className="text-xs text-gray-500 mt-2">Image selected and ready to save with this donation.</p>
+                  )}
                 </div>
 
                 <Button 
@@ -1622,7 +1514,7 @@ export function DonorDashboard() {
             </div>
           )}
         </main>
-      </div>
+      </DashboardLayout>
 
       {isProofViewerOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
@@ -1658,6 +1550,6 @@ export function DonorDashboard() {
           </Card>
         </div>
       )}
-    </div>
+    </>
   );
 }

@@ -4,6 +4,8 @@ import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 import { NotificationBell } from "../components/notification-bell";
+import { GlobalSidebar } from "../components/global-sidebar";
+import { DashboardLayout } from "../components/dashboard-layout";
 import { 
   Home, 
   Sparkles, 
@@ -149,7 +151,7 @@ export function AIMatchingPage() {
   return (
     <div className="min-h-screen bg-gray-50 flex">
       {/* Sidebar */}
-      <aside className="w-72 bg-white border-r border-gray-200 p-6 flex flex-col">
+      <aside className="w-72 bg-white border-r border-gray-200 p-6 flex flex-col shadow-xl">
         <div className="flex items-center gap-2 mb-8">
           <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#10b981] to-[#3b82f6] flex items-center justify-center">
             <Utensils className="w-6 h-6 text-white" />
@@ -183,7 +185,7 @@ export function AIMatchingPage() {
       </aside>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col">
+      <DashboardLayout className="flex-1">
         {/* Top Bar */}
         <header className="bg-white border-b border-gray-200 px-8 py-4">
           <div className="flex items-center justify-between">
@@ -209,46 +211,46 @@ export function AIMatchingPage() {
         {/* Content Area */}
         <main className="flex-1 p-8 overflow-auto">
           {/* AI Matching Stats */}
-          <div className="grid md:grid-cols-4 gap-6 mb-8">
-            <Card className="p-6 rounded-3xl border-0 shadow-lg">
+          <div className="grid grid-cols-4 gap-2 md:gap-6 mb-8">
+            <Card className="p-2 md:p-6 rounded-2xl md:rounded-3xl border-0 shadow-lg">
               <div className="flex items-center justify-between mb-4">
                 <div className="w-12 h-12 rounded-2xl bg-[#d1fae5] flex items-center justify-center">
                   <Sparkles className="w-6 h-6 text-[#047857]" />
                 </div>
                 <TrendingUp className="w-5 h-5 text-[#10b981]" />
               </div>
-              <div className="text-3xl font-bold mb-1">{aiStats.successRate}%</div>
-              <div className="text-gray-600">Match Success Rate</div>
+              <div className="text-lg md:text-3xl font-bold mb-1">{aiStats.successRate}%</div>
+              <div className="text-xs md:text-gray-600">Match Success</div>
             </Card>
 
-            <Card className="p-6 rounded-3xl border-0 shadow-lg">
+            <Card className="p-2 md:p-6 rounded-2xl md:rounded-3xl border-0 shadow-lg">
               <div className="flex items-center justify-between mb-4">
                 <div className="w-12 h-12 rounded-2xl bg-[#dbeafe] flex items-center justify-center">
                   <Zap className="w-6 h-6 text-[#1d4ed8]" />
                 </div>
               </div>
-              <div className="text-3xl font-bold mb-1">{aiStats.avgMatchTime}</div>
-              <div className="text-gray-600">Avg Match Time</div>
+              <div className="text-lg md:text-3xl font-bold mb-1">{aiStats.avgMatchTime}</div>
+              <div className="text-xs md:text-gray-600">Avg Match</div>
             </Card>
 
-            <Card className="p-6 rounded-3xl border-0 shadow-lg">
+            <Card className="p-2 md:p-6 rounded-2xl md:rounded-3xl border-0 shadow-lg">
               <div className="flex items-center justify-between mb-4">
                 <div className="w-12 h-12 rounded-2xl bg-[#fed7aa] flex items-center justify-center">
                   <Activity className="w-6 h-6 text-[#c2410c]" />
                 </div>
               </div>
-              <div className="text-3xl font-bold mb-1">{aiStats.matchesToday}</div>
-              <div className="text-gray-600">Matches Today</div>
+              <div className="text-lg md:text-3xl font-bold mb-1">{aiStats.matchesToday}</div>
+              <div className="text-xs md:text-gray-600">Matches Today</div>
             </Card>
 
-            <Card className="p-6 rounded-3xl border-0 shadow-lg">
+            <Card className="p-2 md:p-6 rounded-2xl md:rounded-3xl border-0 shadow-lg">
               <div className="flex items-center justify-between mb-4">
                 <div className="w-12 h-12 rounded-2xl bg-[#e9d5ff] flex items-center justify-center">
                   <Target className="w-6 h-6 text-[#6d28d9]" />
                 </div>
               </div>
-              <div className="text-3xl font-bold mb-1">{aiStats.confidence}%</div>
-              <div className="text-gray-600">Accuracy Score</div>
+              <div className="text-lg md:text-3xl font-bold mb-1">{aiStats.confidence}%</div>
+              <div className="text-xs md:text-gray-600">Accuracy</div>
             </Card>
           </div>
 
@@ -481,7 +483,7 @@ export function AIMatchingPage() {
             </div>
           </div>
         </main>
-      </div>
+      </DashboardLayout>
     </div>
   );
 }

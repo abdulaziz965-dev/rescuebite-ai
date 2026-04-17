@@ -78,7 +78,7 @@ function ProtectedVolunteerPage() {
 export const router = createBrowserRouter([
   {
     path: "/",
-    Component: LoginPage,
+    Component: LandingPage,
   },
   {
     path: "/home",

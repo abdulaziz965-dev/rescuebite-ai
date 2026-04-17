@@ -7,7 +7,8 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
 import { NotificationBell } from "../components/notification-bell";
-import { Sheet, SheetContent, SheetTrigger } from "../components/ui/sheet";
+import { GlobalSidebar } from "../components/global-sidebar";
+import { DashboardLayout } from "../components/dashboard-layout";
 import { 
   Home, 
   MapPin, 
@@ -335,18 +336,21 @@ export function VolunteerDashboard() {
               title: "Volunteer accepted task",
               message: `${volunteerName} accepted ${selectedTask.foodName} for delivery.`,
               source: "volunteer-dashboard",
+              link: "/donor",
             })
           : sendNotification({
               recipientRole: "donor",
               title: "Volunteer accepted task",
               message: `${volunteerName} accepted ${selectedTask.foodName} for delivery.`,
               source: "volunteer-dashboard",
+              link: "/donor",
             }),
         sendNotification({
           recipientRole: "admin",
           title: "Volunteer task accepted",
           message: `${volunteerName} accepted ${selectedTask.foodName}.`,
           source: "volunteer-dashboard",
+          link: "/admin",
         }),
       ]);
     }
@@ -412,18 +416,21 @@ export function VolunteerDashboard() {
               title: "Delivery completed",
               message: `${volunteerName} completed delivery for ${completionTask.foodName}.`,
               source: "volunteer-dashboard",
+              link: "/donor",
             })
           : sendNotification({
               recipientRole: "donor",
               title: "Delivery completed",
               message: `${volunteerName} completed delivery for ${completionTask.foodName}.`,
               source: "volunteer-dashboard",
+              link: "/donor",
             }),
         sendNotification({
           recipientRole: "admin",
           title: "Delivery proof verified",
           message: `${volunteerName} submitted proof for ${completionTask.foodName}.`,
           source: "volunteer-dashboard",
+          link: "/admin",
         }),
       ]);
 
@@ -545,30 +552,9 @@ export function VolunteerDashboard() {
   };
 
   return (
-    <div className={`min-h-screen flex flex-col lg:flex-row ${themeMode === "dark" ? "bg-slate-950 text-slate-100" : "bg-gray-50"}`}>
-      {/* Sidebar */}
-      <aside className={`hidden lg:flex lg:w-72 border-r p-6 flex-col ${themeMode === "dark" ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200"}`}>
-        <div className="flex items-center gap-2 mb-8">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#10b981] to-[#3b82f6] flex items-center justify-center">
-            <Utensils className="w-6 h-6 text-white" />
-          </div>
-          <span className="text-xl font-semibold">RescueBite AI</span>
-        </div>
-
-        {renderSidebarNav()}
-
-        <div className="border-t border-gray-200 pt-4">
-          <Link to="/">
-            <button className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-gray-600 hover:bg-gray-100 transition-all">
-              <LogOut className="w-5 h-5" />
-              <span>Back to Home</span>
-            </button>
-          </Link>
-        </div>
-      </aside>
-
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col">
+    <>
+      <GlobalSidebar role="volunteer" activeTab={activeTab} onTabChange={(tab: string) => setActiveTab(tab as any)} />
+      <DashboardLayout>
         {/* Top Bar */}
         <header className={`border-b px-4 md:px-6 lg:px-8 py-2 md:py-4 ${themeMode === "dark" ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200"}`}>
           <div className="flex items-center justify-between">
@@ -587,32 +573,6 @@ export function VolunteerDashboard() {
                   <div className="text-xs text-gray-600">Volunteer</div>
                 </div>
               </div>
-              <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
-                <SheetTrigger asChild>
-                  <button className="lg:hidden p-2 hover:bg-gray-100 rounded-lg">
-                    {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-                  </button>
-                </SheetTrigger>
-                <SheetContent side="left" className="p-0 w-72">
-                  <div className="p-6 h-full flex flex-col">
-                    <div className="flex items-center gap-2 mb-8">
-                      <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#10b981] to-[#3b82f6] flex items-center justify-center">
-                        <Utensils className="w-6 h-6 text-white" />
-                      </div>
-                      <span className="text-xl font-semibold">RescueBite AI</span>
-                    </div>
-                    {renderSidebarNav(() => setIsMobileMenuOpen(false))}
-                    <div className="border-t border-gray-200 pt-4">
-                      <Link to="/">
-                        <button className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-gray-600 hover:bg-gray-100 transition-all">
-                          <LogOut className="w-5 h-5" />
-                          <span>Back to Home</span>
-                        </button>
-                      </Link>
-                    </div>
-                  </div>
-                </SheetContent>
-              </Sheet>
             </div>
           </div>
         </header>
@@ -622,46 +582,46 @@ export function VolunteerDashboard() {
           {(activeTab === "available" || activeTab === "active" || activeTab === "completed") && (
           <>
           {/* Stats Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 md:gap-6 mb-6 md:mb-8">
-            <Card className="p-6 rounded-3xl border-0 shadow-lg">
+          <div className="grid grid-cols-4 gap-2 md:gap-6 mb-6 md:mb-8">
+            <Card className="p-2 md:p-6 rounded-2xl md:rounded-3xl border-0 shadow-lg">
               <div className="flex items-center justify-between mb-4">
                 <div className="w-12 h-12 rounded-2xl bg-[#d1fae5] flex items-center justify-center">
                   <CheckCircle2 className="w-6 h-6 text-[#047857]" />
                 </div>
                 <TrendingUp className="w-5 h-5 text-[#10b981]" />
               </div>
-              <div className="text-3xl font-bold mb-1">{totalDeliveries}</div>
-              <div className="text-gray-600">Total Deliveries</div>
+              <div className="text-lg md:text-3xl font-bold mb-1">{totalDeliveries}</div>
+              <div className="text-xs md:text-gray-600">Total Deliveries</div>
             </Card>
 
-            <Card className="p-6 rounded-3xl border-0 shadow-lg">
+            <Card className="p-2 md:p-6 rounded-2xl md:rounded-3xl border-0 shadow-lg">
               <div className="flex items-center justify-between mb-4">
                 <div className="w-12 h-12 rounded-2xl bg-[#dbeafe] flex items-center justify-center">
                   <Route className="w-6 h-6 text-[#1d4ed8]" />
                 </div>
               </div>
-              <div className="text-3xl font-bold mb-1">{totalDistance}</div>
-              <div className="text-gray-600">Distance Covered</div>
+              <div className="text-lg md:text-3xl font-bold mb-1">{totalDistance}</div>
+              <div className="text-xs md:text-gray-600">Distance Covered</div>
             </Card>
 
-            <Card className="p-6 rounded-3xl border-0 shadow-lg">
+            <Card className="p-2 md:p-6 rounded-2xl md:rounded-3xl border-0 shadow-lg">
               <div className="flex items-center justify-between mb-4">
                 <div className="w-12 h-12 rounded-2xl bg-[#fed7aa] flex items-center justify-center">
                   <Package className="w-6 h-6 text-[#c2410c]" />
                 </div>
               </div>
-              <div className="text-3xl font-bold mb-1">{activeTasks.length}</div>
-              <div className="text-gray-600">Active Deliveries</div>
+              <div className="text-lg md:text-3xl font-bold mb-1">{activeTasks.length}</div>
+              <div className="text-xs md:text-gray-600">Active Deliveries</div>
             </Card>
 
-            <Card className="p-6 rounded-3xl border-0 shadow-lg">
+            <Card className="p-2 md:p-6 rounded-2xl md:rounded-3xl border-0 shadow-lg">
               <div className="flex items-center justify-between mb-4">
                 <div className="w-12 h-12 rounded-2xl bg-[#e9d5ff] flex items-center justify-center">
                   <Award className="w-6 h-6 text-[#6d28d9]" />
                 </div>
               </div>
-              <div className="text-3xl font-bold mb-1">{volunteerRating}</div>
-              <div className="text-gray-600">Rating</div>
+              <div className="text-lg md:text-3xl font-bold mb-1">{volunteerRating}</div>
+              <div className="text-xs md:text-gray-600">Rating</div>
             </Card>
           </div>
           </>
@@ -1148,7 +1108,7 @@ export function VolunteerDashboard() {
             </div>
           )}
         </main>
-      </div>
-    </div>
+      </DashboardLayout>
+    </>
   );
 }
