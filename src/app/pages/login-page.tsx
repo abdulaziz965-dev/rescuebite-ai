@@ -203,7 +203,12 @@ export function LoginPage() {
         const result = await getRedirectResult(auth);
         if (result?.user && isMounted) {
           console.log("Redirect result received:", result.user.email);
-          await continueGoogleSignIn(result.user);
+          try {
+            await continueGoogleSignIn(result.user);
+          } catch (continueError: any) {
+            console.error("continueGoogleSignIn failed after redirect:", continueError);
+            setMessage(`Setup failed: ${continueError?.message || "Unknown error"}. Please try again.`);
+          }
           return;
         }
 
@@ -216,7 +221,12 @@ export function LoginPage() {
             return;
           }
           // User exists but no role set yet - continue onboarding
-          await continueGoogleSignIn(auth.currentUser);
+          try {
+            await continueGoogleSignIn(auth.currentUser);
+          } catch (continueError: any) {
+            console.error("continueGoogleSignIn failed for existing user:", continueError);
+            setMessage(`Setup failed: ${continueError?.message || "Unknown error"}. Please try again.`);
+          }
           return;
         }
       } catch (error: any) {
@@ -302,40 +312,51 @@ export function LoginPage() {
   };
 
   const continueGoogleSignIn = async (user: { uid: string; email: string | null; displayName: string | null }) => {
-    const googleEmail = (user.email || "").toLowerCase();
+    try {
+      const googleEmail = (user.email || "").toLowerCase();
+      console.log("continueGoogleSignIn: Processing user:", googleEmail);
 
-    if (!isAllowedEmailService(googleEmail)) {
-      await signOut(auth);
-      setMessage("Only verified email services are allowed (Gmail, Yahoo, Outlook, etc.).");
-      return;
+      if (!isAllowedEmailService(googleEmail)) {
+        console.log("Email not allowed:", googleEmail);
+        await signOut(auth);
+        setMessage("Only verified email services are allowed (Gmail, Yahoo, Outlook, etc.).");
+        return;
+      }
+
+      console.log("Checking Firestore for existing user:", user.uid);
+      const userDoc = await getDoc(doc(db, "users", user.uid));
+      console.log("User document exists:", userDoc.exists());
+
+      if (userDoc.exists() && userDoc.data().role) {
+        console.log("User has role:", userDoc.data().role);
+        navigate(resolveRoleLink(userDoc.data().role as string));
+        return;
+      }
+
+      console.log("Starting Google onboarding for new user");
+      setGoogleOnboardingUser({
+        uid: user.uid,
+        email: user.email || "",
+        fullName: user.displayName || "",
+      });
+      setSelectedRole(null);
+      setAdminAccessId("");
+      setAdminAccessPassword("");
+      setReceiverType(null);
+      setReceiverIndividualMode(null);
+      setReceiverPastWorks("");
+      setReceiverGuidelinesAccepted(false);
+      setNgoName("");
+      setNgoWebsite("");
+      setDonorCategory(null);
+      setRestaurantName("");
+      setOtherDonorLabel("");
+      setDonorLocation("");
+      setMessage("Google sign-in successful. Scroll down to complete role setup.");
+    } catch (error: any) {
+      console.error("continueGoogleSignIn exception:", error);
+      setMessage(`Setup failed: ${error?.message || "Unknown error"}. Try email/password login.`);
     }
-
-    const userDoc = await getDoc(doc(db, "users", user.uid));
-
-    if (userDoc.exists() && userDoc.data().role) {
-      navigate(resolveRoleLink(userDoc.data().role as string));
-      return;
-    }
-
-    setGoogleOnboardingUser({
-      uid: user.uid,
-      email: user.email || "",
-      fullName: user.displayName || "",
-    });
-    setSelectedRole(null);
-    setAdminAccessId("");
-    setAdminAccessPassword("");
-    setReceiverType(null);
-    setReceiverIndividualMode(null);
-    setReceiverPastWorks("");
-    setReceiverGuidelinesAccepted(false);
-    setNgoName("");
-    setNgoWebsite("");
-    setDonorCategory(null);
-    setRestaurantName("");
-    setOtherDonorLabel("");
-    setDonorLocation("");
-    setMessage("Google sign-in successful. Scroll down to complete role setup.");
   };
 
   const handleForgotPassword = async () => {
@@ -593,7 +614,12 @@ export function LoginPage() {
         const result = await signInWithPopup(auth, provider);
         console.log("Popup successful:", result.user.email);
         setAuthLoading(false);
-        await continueGoogleSignIn(result.user);
+        try {
+          await continueGoogleSignIn(result.user);
+        } catch (continueError: any) {
+          console.error("continueGoogleSignIn failed:", continueError?.message);
+          setMessage(`Sign-in setup failed: ${continueError?.message || "Unknown error"}. Please try again.`);
+        }
         return;
       } catch (error: any) {
         console.error("Popup error:", error?.code, error?.message);
