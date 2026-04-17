@@ -763,47 +763,45 @@ export function DonorDashboard() {
           {activeTab === "overview" && (
             <div className="space-y-4 md:space-y-6">
               {/* Stats Cards */}
-              <div className="grid grid-cols-4 gap-2 md:gap-6">
-                <Card className="p-2 md:p-6 rounded-2xl md:rounded-3xl border-0 shadow-lg">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="w-12 h-12 rounded-2xl bg-[#d1fae5] flex items-center justify-center">
-                      <Package className="w-6 h-6 text-[#047857]" />
+              <div className="grid grid-cols-4 gap-1 md:gap-6">
+                <Card className="p-1.5 md:p-6 rounded-lg md:rounded-3xl border-0 shadow-lg">
+                  <div className="flex flex-col items-center mb-2 md:mb-4">
+                    <div className="w-8 h-8 md:w-12 md:h-12 rounded-xl md:rounded-2xl bg-[#d1fae5] flex items-center justify-center mb-1 md:mb-0">
+                      <Package className="w-4 h-4 md:w-6 md:h-6 text-[#047857]" />
                     </div>
-                    <TrendingUp className="w-5 h-5 text-[#10b981]" />
                   </div>
-                  <div className="text-lg md:text-3xl font-bold mb-1">{isDonationsLoading ? "-" : totalDonations}</div>
-                  <div className="text-xs text-gray-600">Total Donations</div>
+                  <div className="text-base md:text-3xl font-bold mb-0.5 md:mb-1 text-center">{isDonationsLoading ? "-" : totalDonations}</div>
+                  <div className="text-xs text-gray-600 text-center leading-tight">Donations</div>
                 </Card>
 
-                <Card className="p-2 md:p-6 rounded-2xl md:rounded-3xl border-0 shadow-lg">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="w-12 h-12 rounded-2xl bg-[#dbeafe] flex items-center justify-center">
-                      <Utensils className="w-6 h-6 text-[#1d4ed8]" />
+                <Card className="p-1.5 md:p-6 rounded-lg md:rounded-3xl border-0 shadow-lg">
+                  <div className="flex flex-col items-center mb-2 md:mb-4">
+                    <div className="w-8 h-8 md:w-12 md:h-12 rounded-xl md:rounded-2xl bg-[#dbeafe] flex items-center justify-center mb-1 md:mb-0">
+                      <Utensils className="w-4 h-4 md:w-6 md:h-6 text-[#1d4ed8]" />
                     </div>
-                    <TrendingUp className="w-5 h-5 text-[#3b82f6]" />
                   </div>
-                  <div className="text-lg md:text-3xl font-bold mb-1">{isDonationsLoading ? "-" : mealsSaved}</div>
-                  <div className="text-xs text-gray-600">Meals Saved</div>
+                  <div className="text-base md:text-3xl font-bold mb-0.5 md:mb-1 text-center">{isDonationsLoading ? "-" : mealsSaved}</div>
+                  <div className="text-xs text-gray-600 text-center leading-tight">Meals</div>
                 </Card>
 
-                <Card className="p-2 md:p-6 rounded-2xl md:rounded-3xl border-0 shadow-lg">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="w-12 h-12 rounded-2xl bg-[#fed7aa] flex items-center justify-center">
-                      <Clock className="w-6 h-6 text-[#c2410c]" />
+                <Card className="p-1.5 md:p-6 rounded-lg md:rounded-3xl border-0 shadow-lg">
+                  <div className="flex flex-col items-center mb-2 md:mb-4">
+                    <div className="w-8 h-8 md:w-12 md:h-12 rounded-xl md:rounded-2xl bg-[#fed7aa] flex items-center justify-center mb-1 md:mb-0">
+                      <Clock className="w-4 h-4 md:w-6 md:h-6 text-[#c2410c]" />
                     </div>
                   </div>
-                  <div className="text-lg md:text-3xl font-bold mb-1">{isDonationsLoading ? "-" : activeDonations}</div>
-                  <div className="text-xs text-gray-600">Active Donations</div>
+                  <div className="text-base md:text-3xl font-bold mb-0.5 md:mb-1 text-center">{isDonationsLoading ? "-" : activeDonations}</div>
+                  <div className="text-xs text-gray-600 text-center leading-tight">Active</div>
                 </Card>
 
-                <Card className="p-2 md:p-6 rounded-2xl md:rounded-3xl border-0 shadow-lg">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="w-12 h-12 rounded-2xl bg-[#e9d5ff] flex items-center justify-center">
-                      <CheckCircle2 className="w-6 h-6 text-[#6d28d9]" />
+                <Card className="p-1.5 md:p-6 rounded-lg md:rounded-3xl border-0 shadow-lg">
+                  <div className="flex flex-col items-center mb-2 md:mb-4">
+                    <div className="w-8 h-8 md:w-12 md:h-12 rounded-xl md:rounded-2xl bg-[#e9d5ff] flex items-center justify-center mb-1 md:mb-0">
+                      <CheckCircle2 className="w-4 h-4 md:w-6 md:h-6 text-[#6d28d9]" />
                     </div>
                   </div>
-                  <div className="text-lg md:text-3xl font-bold mb-1">{isDonationsLoading ? "-" : `${successRate}%`}</div>
-                  <div className="text-xs text-gray-600">Success Rate</div>
+                  <div className="text-base md:text-3xl font-bold mb-0.5 md:mb-1 text-center">{isDonationsLoading ? "-" : `${successRate}%`}</div>
+                  <div className="text-xs text-gray-600 text-center leading-tight">Success</div>
                 </Card>
               </div>
 

@@ -445,22 +445,22 @@ export function AdminDashboard() {
         <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-auto">
           {activeTab === "overview" && (
             <>
-              <div className="grid grid-cols-4 gap-2 md:gap-6 mb-6 md:mb-8">
-                <Card className="p-2 md:p-6 rounded-2xl md:rounded-3xl border-0 shadow-lg">
-                  <div className="text-lg md:text-3xl font-bold mb-1">{loading ? "-" : analytics.totalDonations}</div>
-                  <div className="text-xs md:text-sm text-gray-600">Total Donations</div>
+              <div className="grid grid-cols-4 gap-1 md:gap-6 mb-6 md:mb-8">
+                <Card className="p-1.5 md:p-6 rounded-lg md:rounded-3xl border-0 shadow-lg">
+                  <div className="text-base md:text-3xl font-bold mb-0.5 md:mb-1 text-center">{loading ? "-" : analytics.totalDonations}</div>
+                  <div className="text-xs text-gray-600 text-center leading-tight">Donations</div>
                 </Card>
-                <Card className="p-2 md:p-6 rounded-2xl md:rounded-3xl border-0 shadow-lg">
-                  <div className="text-lg md:text-3xl font-bold mb-1">{loading ? "-" : analytics.claimedDonations}</div>
-                  <div className="text-xs md:text-sm text-gray-600">Claimed Orders</div>
+                <Card className="p-1.5 md:p-6 rounded-lg md:rounded-3xl border-0 shadow-lg">
+                  <div className="text-base md:text-3xl font-bold mb-0.5 md:mb-1 text-center">{loading ? "-" : analytics.claimedDonations}</div>
+                  <div className="text-xs text-gray-600 text-center leading-tight">Claimed</div>
                 </Card>
-                <Card className="p-2 md:p-6 rounded-2xl md:rounded-3xl border-0 shadow-lg">
-                  <div className="text-lg md:text-3xl font-bold mb-1">{loading ? "-" : analytics.completedDeliveries}</div>
-                  <div className="text-xs md:text-sm text-gray-600">Completed</div>
+                <Card className="p-1.5 md:p-6 rounded-lg md:rounded-3xl border-0 shadow-lg">
+                  <div className="text-base md:text-3xl font-bold mb-0.5 md:mb-1 text-center">{loading ? "-" : analytics.completedDeliveries}</div>
+                  <div className="text-xs text-gray-600 text-center leading-tight">Completed</div>
                 </Card>
-                <Card className="p-2 md:p-6 rounded-2xl md:rounded-3xl border-0 shadow-lg">
-                  <div className="text-lg md:text-3xl font-bold mb-1">{loading ? "-" : `${analytics.successRate}%`}</div>
-                  <div className="text-xs md:text-sm text-gray-600">Success</div>
+                <Card className="p-1.5 md:p-6 rounded-lg md:rounded-3xl border-0 shadow-lg">
+                  <div className="text-base md:text-3xl font-bold mb-0.5 md:mb-1 text-center">{loading ? "-" : `${analytics.successRate}%`}</div>
+                  <div className="text-xs text-gray-600 text-center leading-tight">Success</div>
                 </Card>
               </div>
 

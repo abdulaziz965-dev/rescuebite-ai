@@ -211,46 +211,45 @@ export function AIMatchingPage() {
         {/* Content Area */}
         <main className="flex-1 p-8 overflow-auto">
           {/* AI Matching Stats */}
-          <div className="grid grid-cols-4 gap-2 md:gap-6 mb-8">
-            <Card className="p-2 md:p-6 rounded-2xl md:rounded-3xl border-0 shadow-lg">
-              <div className="flex items-center justify-between mb-4">
-                <div className="w-12 h-12 rounded-2xl bg-[#d1fae5] flex items-center justify-center">
-                  <Sparkles className="w-6 h-6 text-[#047857]" />
+          <div className="grid grid-cols-4 gap-1 md:gap-6 mb-8">
+            <Card className="p-1.5 md:p-6 rounded-lg md:rounded-3xl border-0 shadow-lg">
+              <div className="flex flex-col items-center mb-2 md:mb-4">
+                <div className="w-8 h-8 md:w-12 md:h-12 rounded-xl md:rounded-2xl bg-[#d1fae5] flex items-center justify-center mb-1 md:mb-0">
+                  <Sparkles className="w-4 h-4 md:w-6 md:h-6 text-[#047857]" />
                 </div>
-                <TrendingUp className="w-5 h-5 text-[#10b981]" />
               </div>
-              <div className="text-lg md:text-3xl font-bold mb-1">{aiStats.successRate}%</div>
-              <div className="text-xs md:text-gray-600">Match Success</div>
+              <div className="text-base md:text-3xl font-bold mb-0.5 md:mb-1 text-center">{aiStats.successRate}%</div>
+              <div className="text-xs text-gray-600 text-center leading-tight">Success</div>
             </Card>
 
-            <Card className="p-2 md:p-6 rounded-2xl md:rounded-3xl border-0 shadow-lg">
-              <div className="flex items-center justify-between mb-4">
-                <div className="w-12 h-12 rounded-2xl bg-[#dbeafe] flex items-center justify-center">
-                  <Zap className="w-6 h-6 text-[#1d4ed8]" />
+            <Card className="p-1.5 md:p-6 rounded-lg md:rounded-3xl border-0 shadow-lg">
+              <div className="flex flex-col items-center mb-2 md:mb-4">
+                <div className="w-8 h-8 md:w-12 md:h-12 rounded-xl md:rounded-2xl bg-[#dbeafe] flex items-center justify-center mb-1 md:mb-0">
+                  <Zap className="w-4 h-4 md:w-6 md:h-6 text-[#1d4ed8]" />
                 </div>
               </div>
-              <div className="text-lg md:text-3xl font-bold mb-1">{aiStats.avgMatchTime}</div>
-              <div className="text-xs md:text-gray-600">Avg Match</div>
+              <div className="text-base md:text-3xl font-bold mb-0.5 md:mb-1 text-center">{aiStats.avgMatchTime}</div>
+              <div className="text-xs text-gray-600 text-center leading-tight">Avg Time</div>
             </Card>
 
-            <Card className="p-2 md:p-6 rounded-2xl md:rounded-3xl border-0 shadow-lg">
-              <div className="flex items-center justify-between mb-4">
-                <div className="w-12 h-12 rounded-2xl bg-[#fed7aa] flex items-center justify-center">
-                  <Activity className="w-6 h-6 text-[#c2410c]" />
+            <Card className="p-1.5 md:p-6 rounded-lg md:rounded-3xl border-0 shadow-lg">
+              <div className="flex flex-col items-center mb-2 md:mb-4">
+                <div className="w-8 h-8 md:w-12 md:h-12 rounded-xl md:rounded-2xl bg-[#fed7aa] flex items-center justify-center mb-1 md:mb-0">
+                  <Activity className="w-4 h-4 md:w-6 md:h-6 text-[#c2410c]" />
                 </div>
               </div>
-              <div className="text-lg md:text-3xl font-bold mb-1">{aiStats.matchesToday}</div>
-              <div className="text-xs md:text-gray-600">Matches Today</div>
+              <div className="text-base md:text-3xl font-bold mb-0.5 md:mb-1 text-center">{aiStats.matchesToday}</div>
+              <div className="text-xs text-gray-600 text-center leading-tight">Today</div>
             </Card>
 
-            <Card className="p-2 md:p-6 rounded-2xl md:rounded-3xl border-0 shadow-lg">
-              <div className="flex items-center justify-between mb-4">
-                <div className="w-12 h-12 rounded-2xl bg-[#e9d5ff] flex items-center justify-center">
-                  <Target className="w-6 h-6 text-[#6d28d9]" />
+            <Card className="p-1.5 md:p-6 rounded-lg md:rounded-3xl border-0 shadow-lg">
+              <div className="flex flex-col items-center mb-2 md:mb-4">
+                <div className="w-8 h-8 md:w-12 md:h-12 rounded-xl md:rounded-2xl bg-[#e9d5ff] flex items-center justify-center mb-1 md:mb-0">
+                  <Target className="w-4 h-4 md:w-6 md:h-6 text-[#6d28d9]" />
                 </div>
               </div>
-              <div className="text-lg md:text-3xl font-bold mb-1">{aiStats.confidence}%</div>
-              <div className="text-xs md:text-gray-600">Accuracy</div>
+              <div className="text-base md:text-3xl font-bold mb-0.5 md:mb-1 text-center">{aiStats.confidence}%</div>
+              <div className="text-xs text-gray-600 text-center leading-tight">Accuracy</div>
             </Card>
           </div>
 
