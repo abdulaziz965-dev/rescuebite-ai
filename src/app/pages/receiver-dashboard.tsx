@@ -152,64 +152,67 @@ export function ReceiverDashboard() {
         const fullName = typeof data.fullName === "string" ? data.fullName.trim() : "";
         const ngoNameValue = typeof data.ngoName === "string" ? data.ngoName.trim() : "";
         const ngoWebsiteValue = typeof data.ngoWebsite === "string" ? data.ngoWebsite.trim() : "";
-        const profilePhoto = typeof data.photoURL === "string" ? data.photoURL : "";
-        const phoneValue = typeof data.phoneNumber === "string" ? data.phoneNumber : "";
-        const govIdValue = typeof data.receiverGovernmentId === "string" ? data.receiverGovernmentId : "";
-        const idProofImageValue = typeof data.receiverIdProofImage === "string" ? data.receiverIdProofImage : "";
-        const ngoReferenceValue = typeof data.ngoLinkReference === "string" ? data.ngoLinkReference : "";
+        const receiverTypeValue = data.receiverType === "ngo" ? "ngo" : "individual";
+        const individualModeValue = data.receiverIndividualMode === "new" || data.receiverIndividualMode === "experienced"
+          ? data.receiverIndividualMode
+          : null;
+        const pastWorksValue = typeof data.receiverPastWorks === "string" ? data.receiverPastWorks.trim() : "";
+        const guidelinesAcceptedValue = Boolean(data.receiverGuidelinesAccepted);
+        const phoneValue = typeof data.phoneNumber === "string" ? data.phoneNumber.trim() : "";
+        const photoValue = typeof data.photoURL === "string" ? data.photoURL.trim() : "";
+        const governmentIdValue = typeof data.receiverGovernmentId === "string" ? data.receiverGovernmentId.trim() : "";
+        const idProofValue = typeof data.receiverIdProofImage === "string" ? data.receiverIdProofImage.trim() : "";
+        const digiLockerValue = Boolean(data.receiverDigiLockerVerified);
+        const ngoLinkedValue = Boolean(data.ngoLinkedToApp);
+        const ngoReferenceValue = typeof data.ngoLinkReference === "string" ? data.ngoLinkReference.trim() : "";
 
-        setReceiverType((data.receiverType as ReceiverMode | undefined) || null);
-        setReceiverIndividualMode((data.receiverIndividualMode as ReceiverIndividualMode | undefined) || null);
-        setReceiverPastWorks(typeof data.receiverPastWorks === "string" ? data.receiverPastWorks : "");
-        setReceiverGuidelinesAccepted(Boolean(data.receiverGuidelinesAccepted));
+        if (typeof fullName === "string" && fullName.trim()) {
+          setReceiverName(fullName.trim());
+        }
+        if (receiverTypeValue === "ngo" && ngoNameValue) {
+          setReceiverSubtitle(ngoNameValue);
+        } else if (typeof fullName === "string" && fullName.trim()) {
+          setReceiverSubtitle(fullName.trim());
+        }
+        if (phoneValue) {
+          setPhoneNumber(phoneValue);
+        }
+        if (photoValue) {
+          setProfilePhotoUrl(photoValue);
+        }
+        setReceiverType(receiverTypeValue);
+        setReceiverIndividualMode(individualModeValue);
+        setReceiverPastWorks(pastWorksValue);
+        setReceiverGuidelinesAccepted(guidelinesAcceptedValue);
         setNgoName(ngoNameValue);
         setNgoWebsite(ngoWebsiteValue);
-        setProfilePhotoUrl(profilePhoto);
-        setPhoneNumber(phoneValue);
-        setReceiverGovernmentId(govIdValue);
-        setReceiverIdProofImage(idProofImageValue);
-        setReceiverDigiLockerVerified(Boolean(data.receiverDigiLockerVerified));
-        setNgoLinkedToApp(Boolean(data.ngoLinkedToApp));
+        setReceiverGovernmentId(governmentIdValue);
+        setReceiverIdProofImage(idProofValue);
+        setReceiverDigiLockerVerified(digiLockerValue);
+        setNgoLinkedToApp(ngoLinkedValue);
         setNgoLinkReference(ngoReferenceValue);
-
-        if (typeof data.receiverType === "string" && data.receiverType === "ngo" && ngoNameValue) {
-          setReceiverSubtitle(ngoNameValue);
-        } else if (fullName) {
-          setReceiverSubtitle(fullName);
-        }
       } catch {
-        // keep fallback values
+        // Keep fallback values.
       }
     };
 
     loadProfile();
   }, []);
 
-  const upcomingTitle = useMemo(() => {
-    const hour = new Date().getHours();
-    if (hour < 12) {
-      return "Good morning";
-    }
-    if (hour < 17) {
-      return "Good afternoon";
-    }
-    return "Good evening";
-  }, []);
-
-  const formatRelativeTime = (dateValue?: { toDate?: () => Date } | null) => {
-    const date = dateValue?.toDate ? dateValue.toDate() : null;
+  const formatRelativeTime = (createdAt?: { toDate?: () => Date }) => {
+    const date = createdAt?.toDate ? createdAt.toDate() : null;
     if (!date) {
       return "Just now";
     }
 
-    const diffMinutes = Math.floor((Date.now() - date.getTime()) / 60000);
+    const diffMs = Date.now() - date.getTime();
+    const diffMinutes = Math.floor(diffMs / 60000);
     if (diffMinutes < 1) {
       return "Just now";
     }
     if (diffMinutes < 60) {
       return `${diffMinutes} min ago`;
     }
-
     const diffHours = Math.floor(diffMinutes / 60);
     if (diffHours < 24) {
       return `${diffHours} hour${diffHours > 1 ? "s" : ""} ago`;
@@ -312,6 +315,92 @@ export function ReceiverDashboard() {
       vegan: Math.round((counts.vegan / total) * 100),
     };
   }, [donations]);
+  const renderSidebarNav = (closeMenu?: () => void) => (
+    <nav className="flex-1 space-y-2">
+      <button
+        onClick={() => {
+          setActiveTab("available");
+          closeMenu?.();
+        }}
+        className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
+          activeTab === "available"
+            ? "bg-[#10b981] text-white"
+            : themeMode === "dark"
+            ? "text-slate-200 hover:bg-slate-800"
+            : "text-gray-600 hover:bg-gray-100"
+        }`}
+      >
+        <Search className="w-5 h-5" />
+        <span>Available Food</span>
+      </button>
+      <button
+        onClick={() => {
+          setActiveTab("history");
+          closeMenu?.();
+        }}
+        className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
+          activeTab === "history"
+            ? "bg-[#10b981] text-white"
+            : themeMode === "dark"
+            ? "text-slate-200 hover:bg-slate-800"
+            : "text-gray-600 hover:bg-gray-100"
+        }`}
+      >
+        <History className="w-5 h-5" />
+        <span>Claimed History</span>
+      </button>
+      <button
+        onClick={() => {
+          setActiveTab("map");
+          closeMenu?.();
+        }}
+        className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
+          activeTab === "map"
+            ? "bg-[#10b981] text-white"
+            : themeMode === "dark"
+            ? "text-slate-200 hover:bg-slate-800"
+            : "text-gray-600 hover:bg-gray-100"
+        }`}
+      >
+        <MapPin className="w-5 h-5" />
+        <span>Map View</span>
+      </button>
+      <button
+        onClick={() => {
+          setActiveTab("settings");
+          closeMenu?.();
+        }}
+        className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
+          activeTab === "settings"
+            ? "bg-[#10b981] text-white"
+            : themeMode === "dark"
+            ? "text-slate-200 hover:bg-slate-800"
+            : "text-gray-600 hover:bg-gray-100"
+        }`}
+      >
+        <Settings className="w-5 h-5" />
+        <span>Settings</span>
+      </button>
+      {(claimDraftDonation || activeTab === "proof") && (
+        <button
+          onClick={() => {
+            setActiveTab("proof");
+            closeMenu?.();
+          }}
+          className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
+            activeTab === "proof"
+              ? "bg-[#10b981] text-white"
+              : themeMode === "dark"
+              ? "text-slate-200 hover:bg-slate-800"
+              : "text-gray-600 hover:bg-gray-100"
+          }`}
+        >
+          <CheckCircle2 className="w-5 h-5" />
+          <span>Claim Proof</span>
+        </button>
+      )}
+    </nav>
+  );
 
   const handleClaimFood = (donationId: string) => {
     const selectedDonation = donations.find((donation) => donation.id === donationId);
@@ -672,21 +761,47 @@ export function ReceiverDashboard() {
       <div className="flex-1 flex flex-col">
         <header className={`border-b px-4 md:px-6 lg:px-8 py-2 md:py-4 ${themeMode === "dark" ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200"}`}>
           <div className="flex items-center justify-between">
-            <div>
+            <div className="flex-1">
               <h1 className="text-lg md:text-xl lg:text-2xl font-bold">Receiver Dashboard</h1>
-              <p className="text-gray-600">{upcomingTitle}, {receiverSubtitle}</p>
+              <p className="text-xs md:text-sm text-gray-600">Welcome back, {receiverSubtitle}</p>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 md:gap-4">
               <NotificationBell audienceRole="receiver" />
-              <div className="flex items-center gap-3">
+              <div className="hidden sm:flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#3b82f6] to-[#8b5cf6] flex items-center justify-center overflow-hidden">
                   {profilePhotoUrl ? <img src={profilePhotoUrl} alt="Profile" className="w-full h-full object-cover" /> : <User className="w-6 h-6 text-white" />}
                 </div>
-                <div>
-                  <div className="font-medium">{receiverName}</div>
-                  <div className="text-sm text-gray-600">{receiverType === "ngo" ? "NGO Receiver" : "Receiver"}</div>
+                <div className="hidden md:block">
+                  <div className="font-medium text-sm">{receiverName}</div>
+                  <div className="text-xs text-gray-600">{receiverType === "ngo" ? "NGO Receiver" : "Receiver"}</div>
                 </div>
               </div>
+              <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
+                <SheetTrigger asChild>
+                  <button className="lg:hidden p-2 hover:bg-gray-100 rounded-lg">
+                    {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+                  </button>
+                </SheetTrigger>
+                <SheetContent side="left" className="p-0 w-72">
+                  <div className="p-6 h-full flex flex-col">
+                    <div className="flex items-center gap-2 mb-8">
+                      <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#10b981] to-[#3b82f6] flex items-center justify-center">
+                        <Utensils className="w-6 h-6 text-white" />
+                      </div>
+                      <span className="text-xl font-semibold">RescueBite AI</span>
+                    </div>
+                    {renderSidebarNav(() => setIsMobileMenuOpen(false))}
+                    <div className="border-t border-gray-200 pt-4">
+                      <Link to="/">
+                        <button className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-gray-600 hover:bg-gray-100 transition-all">
+                          <LogOut className="w-5 h-5" />
+                          <span>Back to Home</span>
+                        </button>
+                      </Link>
+                    </div>
+                  </div>
+                </SheetContent>
+              </Sheet>
             </div>
           </div>
         </header>

@@ -86,8 +86,8 @@ export function NotificationBell({ audienceRole }: { audienceRole: NotificationA
       </Button>
 
       {open && (
-        <div className="absolute right-0 mt-3 w-[24rem] max-w-[calc(100vw-2rem)] z-50">
-          <Card className="rounded-3xl border border-gray-200 shadow-2xl overflow-hidden">
+        <div className="fixed left-2 right-2 top-16 z-50 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-3 sm:w-[24rem] sm:translate-x-0">
+          <Card className="rounded-3xl border border-gray-200 shadow-2xl overflow-hidden max-h-[70vh] sm:max-h-none">
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
               <div>
                 <div className="font-semibold">Notifications</div>
@@ -101,7 +101,7 @@ export function NotificationBell({ audienceRole }: { audienceRole: NotificationA
                 <ChevronDown className="w-5 h-5" />
               </button>
             </div>
-            <div className="max-h-96 overflow-auto">
+            <div className="max-h-[60vh] sm:max-h-96 overflow-auto">
               {visibleNotifications.length > 0 ? (
                 visibleNotifications.map((notification) => {
                   const isRead = currentUserUid ? (notification.readByUids || []).includes(currentUserUid) : false;

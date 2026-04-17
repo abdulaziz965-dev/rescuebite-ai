@@ -212,7 +212,75 @@ export function VolunteerDashboard() {
   const availableTasks = useMemo(() => tasks.filter((task) => task.status === "pending"), [tasks]);
   const activeTasks = useMemo(() => tasks.filter((task) => task.status === "active"), [tasks]);
   const completedTasks = useMemo(() => tasks.filter((task) => task.status === "completed"), [tasks]);
-
+  
+  const renderSidebarNav = (closeMenu?: () => void) => (
+    <nav className="flex-1 space-y-2">
+      <button
+        onClick={() => {
+          setActiveTab("available");
+          closeMenu?.();
+        }}
+        className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
+          activeTab === "available"
+            ? "bg-[#10b981] text-white"
+            : themeMode === "dark"
+            ? "text-slate-200 hover:bg-slate-800"
+            : "text-gray-600 hover:bg-gray-100"
+        }`}
+      >
+        <Home className="w-5 h-5" />
+        <span>Available Tasks</span>
+      </button>
+      <button
+        onClick={() => {
+          setActiveTab("active");
+          closeMenu?.();
+        }}
+        className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
+          activeTab === "active"
+            ? "bg-[#10b981] text-white"
+            : themeMode === "dark"
+            ? "text-slate-200 hover:bg-slate-800"
+            : "text-gray-600 hover:bg-gray-100"
+        }`}
+      >
+        <Package className="w-5 h-5" />
+        <span>Active Deliveries</span>
+      </button>
+      <button
+        onClick={() => {
+          setActiveTab("completed");
+          closeMenu?.();
+        }}
+        className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
+          activeTab === "completed"
+            ? "bg-[#10b981] text-white"
+            : themeMode === "dark"
+            ? "text-slate-200 hover:bg-slate-800"
+            : "text-gray-600 hover:bg-gray-100"
+        }`}
+      >
+        <CheckCircle2 className="w-5 h-5" />
+        <span>Completed</span>
+      </button>
+      <button
+        onClick={() => {
+          setActiveTab("profile");
+          closeMenu?.();
+        }}
+        className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${
+          activeTab === "profile"
+            ? "bg-[#10b981] text-white"
+            : themeMode === "dark"
+            ? "text-slate-200 hover:bg-slate-800"
+            : "text-gray-600 hover:bg-gray-100"
+        }`}
+      >
+        <Settings className="w-5 h-5" />
+        <span>Profile</span>
+      </button>
+    </nav>
+  );
   const combinedCompletedDeliveries = useMemo(() => {
     return completedTasks.map((task) => ({
       id: `task-${task.id}`,
@@ -487,24 +555,7 @@ export function VolunteerDashboard() {
           <span className="text-xl font-semibold">RescueBite AI</span>
         </div>
 
-        <nav className="flex-1 space-y-2">
-          <button onClick={() => setActiveTab("available")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${activeTab === "available" ? "bg-[#10b981] text-white" : themeMode === "dark" ? "text-slate-200 hover:bg-slate-800" : "text-gray-600 hover:bg-gray-100"}`}>
-            <Home className="w-5 h-5" />
-            <span>Available Tasks</span>
-          </button>
-          <button onClick={() => setActiveTab("active")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${activeTab === "active" ? "bg-[#10b981] text-white" : themeMode === "dark" ? "text-slate-200 hover:bg-slate-800" : "text-gray-600 hover:bg-gray-100"}`}>
-            <Package className="w-5 h-5" />
-            <span>Active Deliveries</span>
-          </button>
-          <button onClick={() => setActiveTab("completed")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${activeTab === "completed" ? "bg-[#10b981] text-white" : themeMode === "dark" ? "text-slate-200 hover:bg-slate-800" : "text-gray-600 hover:bg-gray-100"}`}>
-            <CheckCircle2 className="w-5 h-5" />
-            <span>Completed</span>
-          </button>
-          <button onClick={() => setActiveTab("profile")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${activeTab === "profile" ? "bg-[#10b981] text-white" : themeMode === "dark" ? "text-slate-200 hover:bg-slate-800" : "text-gray-600 hover:bg-gray-100"}`}>
-            <Settings className="w-5 h-5" />
-            <span>Profile</span>
-          </button>
-        </nav>
+        {renderSidebarNav()}
 
         <div className="border-t border-gray-200 pt-4">
           <Link to="/">
@@ -521,21 +572,47 @@ export function VolunteerDashboard() {
         {/* Top Bar */}
         <header className={`border-b px-4 md:px-6 lg:px-8 py-2 md:py-4 ${themeMode === "dark" ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200"}`}>
           <div className="flex items-center justify-between">
-            <div>
+            <div className="flex-1">
               <h1 className="text-lg md:text-xl lg:text-2xl font-bold">Volunteer Dashboard</h1>
-              <p className="text-gray-600">Welcome back, {volunteerName}</p>
+              <p className="text-xs md:text-sm text-gray-600">Welcome back, {volunteerName}</p>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 md:gap-4">
               <NotificationBell audienceRole="volunteer" />
-              <div className="flex items-center gap-3">
+              <div className="hidden sm:flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#8b5cf6] to-[#ec4899] flex items-center justify-center overflow-hidden">
                   {profilePhotoUrl ? <img src={profilePhotoUrl} alt="Profile" className="w-full h-full object-cover" /> : <User className="w-6 h-6 text-white" />}
                 </div>
-                <div>
-                  <div className="font-medium">{volunteerName}</div>
-                  <div className="text-sm text-gray-600">Volunteer</div>
+                <div className="hidden md:block">
+                  <div className="font-medium text-sm">{volunteerName}</div>
+                  <div className="text-xs text-gray-600">Volunteer</div>
                 </div>
               </div>
+              <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
+                <SheetTrigger asChild>
+                  <button className="lg:hidden p-2 hover:bg-gray-100 rounded-lg">
+                    {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+                  </button>
+                </SheetTrigger>
+                <SheetContent side="left" className="p-0 w-72">
+                  <div className="p-6 h-full flex flex-col">
+                    <div className="flex items-center gap-2 mb-8">
+                      <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#10b981] to-[#3b82f6] flex items-center justify-center">
+                        <Utensils className="w-6 h-6 text-white" />
+                      </div>
+                      <span className="text-xl font-semibold">RescueBite AI</span>
+                    </div>
+                    {renderSidebarNav(() => setIsMobileMenuOpen(false))}
+                    <div className="border-t border-gray-200 pt-4">
+                      <Link to="/">
+                        <button className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-gray-600 hover:bg-gray-100 transition-all">
+                          <LogOut className="w-5 h-5" />
+                          <span>Back to Home</span>
+                        </button>
+                      </Link>
+                    </div>
+                  </div>
+                </SheetContent>
+              </Sheet>
             </div>
           </div>
         </header>
