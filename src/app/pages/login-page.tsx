@@ -394,13 +394,6 @@ export function LoginPage() {
       const googleEmail = (user.email || "").toLowerCase();
       console.log("continueGoogleSignIn: Processing user:", googleEmail);
 
-      if (!isAllowedEmailService(googleEmail)) {
-        console.log("Email not allowed:", googleEmail);
-        await signOut(auth);
-        setMessage("Only verified email services are allowed (Gmail, Yahoo, Outlook, etc.).");
-        return;
-      }
-
       console.log("Checking Firestore for existing user:", user.uid);
       const userDoc = await getDoc(doc(db, "users", user.uid));
       console.log("User document exists:", userDoc.exists());
@@ -1469,31 +1462,42 @@ export function LoginPage() {
               </Button>
 
               {googleOnboardingUser && (
-                <div className="mt-5 p-4 rounded-2xl border border-gray-200 bg-gray-50 space-y-4">
+                <div className="mt-5 space-y-4 rounded-3xl border border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-cyan-50 p-4 shadow-sm sm:p-5">
                   <div>
-                    <h3 className="text-sm font-semibold">Complete Google Login Setup</h3>
-                    <p className="text-xs text-gray-600 mt-1">
+                    <h3 className="text-base font-bold text-slate-900">Complete Google Login Setup</h3>
+                    <p className="mt-1 text-sm leading-relaxed text-slate-600">
                       Choose your role to continue as {googleOnboardingUser.email || "your account"}.
                     </p>
                   </div>
 
                   <div>
-                    <Label className="mb-2 block">Select Role</Label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {googleRoles.map((role) => (
-                        <button
-                          key={role.id}
-                          type="button"
-                          onClick={() => setSelectedRole(role.id)}
-                          className={`p-3 rounded-xl border-2 transition-all text-left ${
-                            selectedRole === role.id
-                              ? "border-[#10b981] bg-[#d1fae5]"
-                              : "border-gray-200 hover:border-gray-300"
-                          }`}
-                        >
-                          <div className="font-semibold text-xs">{role.title}</div>
-                        </button>
-                      ))}
+                    <Label className="mb-2 block text-slate-700">Select Role</Label>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                      {googleRoles.map((role) => {
+                        const Icon = role.icon;
+
+                        return (
+                          <button
+                            key={role.id}
+                            type="button"
+                            onClick={() => setSelectedRole(role.id)}
+                            className={`rounded-2xl border-2 p-3 text-center transition-all ${
+                              selectedRole === role.id
+                                ? role.id === "donor"
+                                  ? "border-emerald-500 bg-emerald-100 text-emerald-900 shadow-sm"
+                                  : role.id === "receiver"
+                                  ? "border-blue-500 bg-blue-100 text-blue-900 shadow-sm"
+                                  : "border-amber-500 bg-amber-100 text-amber-900 shadow-sm"
+                                : "border-white/80 bg-white/80 text-slate-700 hover:border-slate-300"
+                            }`}
+                          >
+                            <div className="mx-auto mb-1 flex h-7 w-7 items-center justify-center rounded-full bg-white/90">
+                              <Icon className="h-4 w-4" />
+                            </div>
+                            <div className="text-sm font-semibold">{role.title}</div>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -1746,11 +1750,11 @@ export function LoginPage() {
                     </div>
                   )}
 
-                  <div className="flex gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row">
                     <Button
                       type="button"
                       variant="outline"
-                      className="flex-1 rounded-full"
+                      className="h-11 flex-1 rounded-full border-slate-300 bg-white text-slate-700"
                       onClick={resetGoogleOnboardingState}
                       disabled={authLoading}
                     >
@@ -1758,7 +1762,7 @@ export function LoginPage() {
                     </Button>
                     <Button
                       type="button"
-                      className="flex-1 rounded-full bg-[#10b981] hover:bg-[#047857]"
+                      className="h-11 flex-1 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:from-emerald-600 hover:to-teal-600"
                       onClick={handleCompleteGoogleOnboarding}
                       disabled={authLoading}
                     >
