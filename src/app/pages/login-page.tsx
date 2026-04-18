@@ -218,9 +218,44 @@ export function LoginPage() {
   }, []);
 
   useEffect(() => {
+    let redirectProcessed = false;
+
+    const processRedirectResult = async () => {
+      try {
+        const result = await getRedirectResult(auth);
+        if (result?.user) {
+          console.log("Google redirect result: user logged in", result.user.email);
+          redirectProcessed = true;
+          await continueGoogleSignIn(result.user);
+          return;
+        }
+      } catch (error: any) {
+        if (error?.code === "auth/unauthorized-domain") {
+          setMessage(
+            "Google sign-in is blocked for this domain. Add your Vercel domain in Firebase Console > Authentication > Settings > Authorized domains."
+          );
+          return;
+        }
+
+        if (error?.code === "auth/operation-not-allowed") {
+          setMessage("Google sign-in is disabled in Firebase. Enable Google provider in Authentication > Sign-in method.");
+          return;
+        }
+
+        console.error("Redirect result error:", error);
+      }
+    };
+
+    processRedirectResult();
+
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (!user) {
         setAuthLoading(false);
+        return;
+      }
+
+      // Skip if we already processed via redirect result
+      if (redirectProcessed) {
         return;
       }
 
@@ -228,22 +263,6 @@ export function LoginPage() {
       void continueGoogleSignIn(user).catch((error: any) => {
         setMessage(`Setup failed: ${error?.message || "Unknown error"}. Please try again.`);
       });
-    });
-
-    void getRedirectResult(auth).catch((error: any) => {
-      if (error?.code === "auth/unauthorized-domain") {
-        setMessage(
-          "Google sign-in is blocked for this domain. Add your Vercel domain in Firebase Console > Authentication > Settings > Authorized domains."
-        );
-        return;
-      }
-
-      if (error?.code === "auth/operation-not-allowed") {
-        setMessage("Google sign-in is disabled in Firebase. Enable Google provider in Authentication > Sign-in method.");
-        return;
-      }
-
-      console.error("Redirect result error:", error);
     });
 
     return () => unsubscribe();
