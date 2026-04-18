@@ -47,6 +47,8 @@ const ALLOWED_EMAIL_DOMAINS = new Set([
   "zoho.com",
 ]);
 
+const GOOGLE_REDIRECT_PENDING_KEY = "google-redirect-pending";
+
 const isMobileOrEmbeddedBrowser = () => {
   if (typeof navigator === "undefined" || typeof window === "undefined") {
     return false;
@@ -241,6 +243,30 @@ export function LoginPage() {
 
   useEffect(() => {
     let isMounted = true;
+    let authFallbackUnsubscribe: (() => void) | null = null;
+    let fallbackTimeoutId: number | null = null;
+
+    const clearRedirectPendingFlag = () => {
+      if (typeof window !== "undefined") {
+        window.sessionStorage.removeItem(GOOGLE_REDIRECT_PENDING_KEY);
+      }
+    };
+
+    const hasPendingRedirect = () => {
+      if (typeof window === "undefined") {
+        return false;
+      }
+      return window.sessionStorage.getItem(GOOGLE_REDIRECT_PENDING_KEY) === "1";
+    };
+
+    const finishGoogleSignIn = async (user: { uid: string; email: string | null; displayName: string | null }) => {
+      if (!isMounted) {
+        return;
+      }
+      clearRedirectPendingFlag();
+      setAuthLoading(false);
+      await continueGoogleSignIn(user);
+    };
 
     const restoreGoogleRedirect = async () => {
       try {
@@ -249,7 +275,7 @@ export function LoginPage() {
         if (result?.user && isMounted) {
           console.log("Redirect result received:", result.user.email);
           try {
-            await continueGoogleSignIn(result.user);
+            await finishGoogleSignIn(result.user);
           } catch (continueError: any) {
             console.error("continueGoogleSignIn failed after redirect:", continueError);
             setMessage(`Setup failed: ${continueError?.message || "Unknown error"}. Please try again.`);
@@ -257,8 +283,39 @@ export function LoginPage() {
           return;
         }
 
+        if (hasPendingRedirect()) {
+          authFallbackUnsubscribe = onAuthStateChanged(auth, (user) => {
+            if (!user || !isMounted) {
+              return;
+            }
+
+            if (authFallbackUnsubscribe) {
+              authFallbackUnsubscribe();
+              authFallbackUnsubscribe = null;
+            }
+
+            void finishGoogleSignIn(user).catch((continueError: any) => {
+              console.error("Auth-state fallback failed after redirect:", continueError);
+              if (isMounted) {
+                setMessage(`Setup failed: ${continueError?.message || "Unknown error"}. Please try again.`);
+              }
+            });
+          });
+
+          fallbackTimeoutId = window.setTimeout(() => {
+            if (!isMounted) {
+              return;
+            }
+            clearRedirectPendingFlag();
+            setAuthLoading(false);
+          }, 6000);
+        }
+
       } catch (error: any) {
         if (!isMounted) return;
+
+        clearRedirectPendingFlag();
+        setAuthLoading(false);
 
         console.error("Redirect result error:", error?.code, error?.message);
 
@@ -286,6 +343,12 @@ export function LoginPage() {
     // Cleanup
     return () => {
       isMounted = false;
+      if (authFallbackUnsubscribe) {
+        authFallbackUnsubscribe();
+      }
+      if (fallbackTimeoutId !== null) {
+        window.clearTimeout(fallbackTimeoutId);
+      }
     };
   }, [navigate]);
 
@@ -703,6 +766,18 @@ export function LoginPage() {
     setMessage("");
     setAuthLoading(true);
 
+    const markRedirectPending = () => {
+      if (typeof window !== "undefined") {
+        window.sessionStorage.setItem(GOOGLE_REDIRECT_PENDING_KEY, "1");
+      }
+    };
+
+    const clearRedirectPending = () => {
+      if (typeof window !== "undefined") {
+        window.sessionStorage.removeItem(GOOGLE_REDIRECT_PENDING_KEY);
+      }
+    };
+
     try {
       await setPersistence(auth, browserSessionPersistence);
 
@@ -717,6 +792,7 @@ export function LoginPage() {
       if (isAndroidOrIOS) {
         console.log("Using redirect flow for mobile");
         setMessage("Signing in with Google...");
+        markRedirectPending();
         await signInWithRedirect(auth, provider);
         return;
       }
@@ -726,6 +802,7 @@ export function LoginPage() {
         console.log("Attempting popup sign-in");
         const result = await signInWithPopup(auth, provider);
         console.log("Popup successful:", result.user.email);
+        clearRedirectPending();
         setAuthLoading(false);
         try {
           await continueGoogleSignIn(result.user);
@@ -738,9 +815,14 @@ export function LoginPage() {
         console.error("Popup error:", error?.code, error?.message);
 
         // Fall back to redirect for popup-specific errors
-        if (error?.code === "auth/popup-blocked" || error?.code === "auth/popup-closed-by-user") {
+        if (
+          error?.code === "auth/popup-blocked" ||
+          error?.code === "auth/popup-closed-by-user" ||
+          error?.code === "auth/operation-not-supported-in-this-environment"
+        ) {
           console.log("Popup blocked/closed, trying redirect");
           setMessage("Signing in with Google (redirect)...");
+          markRedirectPending();
           await signInWithRedirect(auth, provider);
           return;
         }
@@ -759,10 +841,12 @@ export function LoginPage() {
         }
 
         setAuthLoading(false);
+        clearRedirectPending();
         setMessage("Google sign-in failed. Please try again or use email/password login.");
       }
     } catch (error: any) {
       setAuthLoading(false);
+      clearRedirectPending();
       console.error("Auth setup error:", error);
       setMessage("Failed to initialize sign-in. Please refresh and try again.");
     }
