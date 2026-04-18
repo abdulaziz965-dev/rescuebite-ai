@@ -221,9 +221,11 @@ export function LoginPage() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (!user) {
+        setAuthLoading(false);
         return;
       }
 
+      setAuthLoading(false);
       void continueGoogleSignIn(user).catch((error: any) => {
         setMessage(`Setup failed: ${error?.message || "Unknown error"}. Please try again.`);
       });
@@ -363,6 +365,7 @@ export function LoginPage() {
 
   const continueGoogleSignIn = async (user: { uid: string; email: string | null; displayName: string | null }) => {
     try {
+      setAuthLoading(false);
       const googleEmail = (user.email || "").toLowerCase();
       console.log("continueGoogleSignIn: Processing user:", googleEmail);
 
