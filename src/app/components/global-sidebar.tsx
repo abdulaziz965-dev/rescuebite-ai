@@ -39,15 +39,15 @@ const receiverNav = [
 ];
 
 const volunteerNav = [
-  { id: "tasks", label: "Tasks", icon: Home },
-  { id: "history", label: "Completed", icon: Clock },
-  { id: "stats", label: "Statistics", icon: BarChart3 },
-  { id: "settings", label: "Settings", icon: Settings },
+  { id: "available", label: "Available", icon: Home },
+  { id: "active", label: "Active", icon: Truck },
+  { id: "completed", label: "Completed", icon: Clock },
+  { id: "profile", label: "Profile", icon: User },
 ];
 
 const adminNav = [
   { id: "overview", label: "Overview", icon: Home },
-  { id: "reports", label: "Reports", icon: Shield },
+  { id: "donations", label: "Donations", icon: Shield },
   { id: "users", label: "Users", icon: User },
   { id: "analytics", label: "Analytics", icon: BarChart3 },
   { id: "settings", label: "Settings", icon: Settings },
