@@ -25,7 +25,6 @@ import {
   getRedirectResult,
   sendPasswordResetEmail,
   setPersistence,
-  signInWithPopup,
   signInWithRedirect,
   signInWithEmailAndPassword,
   signOut,
@@ -666,72 +665,31 @@ export function LoginPage() {
     setAuthLoading(true);
 
     try {
-      const preferLocalPersistence = isMobileOrEmbeddedBrowser();
+      const preferLocalPersistence = true;
       await setPersistence(auth, preferLocalPersistence ? browserLocalPersistence : browserSessionPersistence);
 
       const provider = new GoogleAuthProvider();
       provider.addScope("profile");
       provider.addScope("email");
       provider.setCustomParameters({ prompt: "select_account" });
-      const isAndroidOrIOS = isMobileOrEmbeddedBrowser();
-
-      console.log("Mobile detected:", isAndroidOrIOS, "User-Agent:", navigator.userAgent);
-
-      // Use redirect on mobile - more reliable
-      if (isAndroidOrIOS) {
-        console.log("Using redirect flow for mobile");
-        setMessage("Signing in with Google...");
-        await signInWithRedirect(auth, provider);
-        return;
-      }
-
-      // Try popup on desktop
-      try {
-        console.log("Attempting popup sign-in");
-        const result = await signInWithPopup(auth, provider);
-        console.log("Popup successful:", result.user.email);
-        setAuthLoading(false);
-        try {
-          await continueGoogleSignIn(result.user);
-        } catch (continueError: any) {
-          console.error("continueGoogleSignIn failed:", continueError?.message);
-          setMessage(`Sign-in setup failed: ${continueError?.message || "Unknown error"}. Please try again.`);
-        }
-        return;
-      } catch (error: any) {
-        console.error("Popup error:", error?.code, error?.message);
-
-        // Fall back to redirect for popup-specific errors
-        if (
-          error?.code === "auth/popup-blocked" ||
-          error?.code === "auth/popup-closed-by-user" ||
-          error?.code === "auth/operation-not-supported-in-this-environment"
-        ) {
-          console.log("Popup blocked/closed, trying redirect");
-          setMessage("Signing in with Google (redirect)...");
-          await signInWithRedirect(auth, provider);
-          return;
-        }
-
-        // Handle specific Firebase configuration errors
-        if (error?.code === "auth/unauthorized-domain") {
-          setAuthLoading(false);
-          setMessage("This domain is not authorized in Firebase Auth. Add your Vercel domain in Firebase Console → Authentication → Settings → Authorized domains.");
-          return;
-        }
-
-        if (error?.code === "auth/operation-not-allowed") {
-          setAuthLoading(false);
-          setMessage("Google sign-in is disabled in Firebase. Enable Google provider in Authentication > Sign-in method.");
-          return;
-        }
-
-        setAuthLoading(false);
-        setMessage("Google sign-in failed. Please try again or use email/password login.");
-      }
+      console.log("Using redirect-based Google sign-in for reliability");
+      setMessage("Signing in with Google...");
+      await signInWithRedirect(auth, provider);
+      return;
     } catch (error: any) {
       setAuthLoading(false);
       console.error("Auth setup error:", error);
+
+      if (error?.code === "auth/unauthorized-domain") {
+        setMessage("This domain is not authorized in Firebase Auth. Add your Vercel domain in Firebase Console -> Authentication -> Settings -> Authorized domains.");
+        return;
+      }
+
+      if (error?.code === "auth/operation-not-allowed") {
+        setMessage("Google sign-in is disabled in Firebase. Enable Google provider in Authentication > Sign-in method.");
+        return;
+      }
+
       setMessage("Failed to initialize sign-in. Please refresh and try again.");
     }
   };
