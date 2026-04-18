@@ -220,7 +220,12 @@ export function LoginPage() {
   useEffect(() => {
     const processRedirectResult = async () => {
       console.log("Starting redirect result processing...");
+      
       try {
+        // CRITICAL: Set persistence BEFORE getting redirect result
+        console.log("Setting persistence before getRedirectResult...");
+        await setPersistence(auth, browserLocalPersistence);
+        
         const result = await getRedirectResult(auth);
         console.log("getRedirectResult returned:", result ? "user found" : "no user");
         
