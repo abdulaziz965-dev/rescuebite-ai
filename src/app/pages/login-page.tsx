@@ -218,18 +218,23 @@ export function LoginPage() {
   }, []);
 
   useEffect(() => {
-    let redirectProcessed = false;
-
     const processRedirectResult = async () => {
+      console.log("Starting redirect result processing...");
       try {
         const result = await getRedirectResult(auth);
+        console.log("getRedirectResult returned:", result ? "user found" : "no user");
+        
         if (result?.user) {
-          console.log("Google redirect result: user logged in", result.user.email);
-          redirectProcessed = true;
+          console.log("✓ Google redirect result: user logged in", result.user.email);
+          setAuthLoading(false);
           await continueGoogleSignIn(result.user);
           return;
+        } else {
+          console.log("No redirect result user");
         }
       } catch (error: any) {
+        console.error("getRedirectResult error:", error?.code, error?.message);
+        
         if (error?.code === "auth/unauthorized-domain") {
           setMessage(
             "Google sign-in is blocked for this domain. Add your Vercel domain in Firebase Console > Authentication > Settings > Authorized domains."
@@ -241,26 +246,22 @@ export function LoginPage() {
           setMessage("Google sign-in is disabled in Firebase. Enable Google provider in Authentication > Sign-in method.");
           return;
         }
-
-        console.error("Redirect result error:", error);
       }
     };
 
     processRedirectResult();
 
     const unsubscribe = onAuthStateChanged(auth, (user) => {
+      console.log("onAuthStateChanged fired, user:", user ? user.email : "null");
+      
       if (!user) {
         setAuthLoading(false);
         return;
       }
 
-      // Skip if we already processed via redirect result
-      if (redirectProcessed) {
-        return;
-      }
-
       setAuthLoading(false);
       void continueGoogleSignIn(user).catch((error: any) => {
+        console.error("continueGoogleSignIn error:", error);
         setMessage(`Setup failed: ${error?.message || "Unknown error"}. Please try again.`);
       });
     });
