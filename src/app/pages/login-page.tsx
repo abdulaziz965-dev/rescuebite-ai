@@ -26,6 +26,7 @@ import {
   sendPasswordResetEmail,
   setPersistence,
   signInWithRedirect,
+  signInWithPopup,
   signInWithEmailAndPassword,
   signOut,
   updateProfile,
@@ -697,10 +698,25 @@ export function LoginPage() {
       provider.addScope("profile");
       provider.addScope("email");
       provider.setCustomParameters({ prompt: "select_account" });
-      console.log("Using redirect-based Google sign-in for reliability");
+      console.log("Starting Google sign-in with popup");
       setMessage("Signing in with Google...");
-      await signInWithRedirect(auth, provider);
-      return;
+      
+      try {
+        const result = await signInWithPopup(auth, provider);
+        console.log("Google popup sign-in successful:", result.user.email);
+        setAuthLoading(false);
+        await continueGoogleSignIn(result.user);
+        return;
+      } catch (popupError: any) {
+        console.error("Popup error:", popupError?.code);
+        // Fallback to redirect
+        if (popupError?.code !== "auth/popup-blocked" && popupError?.code !== "auth/cancelled-popup-request") {
+          throw popupError;
+        }
+        console.log("Popup blocked/cancelled, trying redirect...");
+        await signInWithRedirect(auth, provider);
+        return;
+      }
     } catch (error: any) {
       setAuthLoading(false);
       console.error("Auth setup error:", error);
