@@ -18,6 +18,7 @@ import {
 import { ImageWithFallback } from "../components/figma/ImageWithFallback";
 import { collection, doc, getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
 import {
+  browserLocalPersistence,
   browserSessionPersistence,
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
@@ -308,7 +309,8 @@ export function LoginPage() {
             }
             clearRedirectPendingFlag();
             setAuthLoading(false);
-          }, 6000);
+            setMessage("Google sign-in is taking longer than expected. Please tap Sign in with Google again.");
+          }, 20000);
         }
 
       } catch (error: any) {
@@ -779,11 +781,13 @@ export function LoginPage() {
     };
 
     try {
-      await setPersistence(auth, browserSessionPersistence);
+      const preferLocalPersistence = isMobileOrEmbeddedBrowser();
+      await setPersistence(auth, preferLocalPersistence ? browserLocalPersistence : browserSessionPersistence);
 
       const provider = new GoogleAuthProvider();
       provider.addScope("profile");
       provider.addScope("email");
+      provider.setCustomParameters({ prompt: "select_account" });
       const isAndroidOrIOS = isMobileOrEmbeddedBrowser();
 
       console.log("Mobile detected:", isAndroidOrIOS, "User-Agent:", navigator.userAgent);
