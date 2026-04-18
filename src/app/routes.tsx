@@ -10,10 +10,25 @@ import { VolunteerDashboard } from "./pages/volunteer-dashboard";
 import { LoginPage } from "./pages/login-page";
 import { auth } from "../firebase/config";
 
-function RequireAuth({ children }: { children: ReactNode }) {
+function RequireAuth({
+  children,
+  allowAdminBypass = false,
+}: {
+  children: ReactNode;
+  allowAdminBypass?: boolean;
+}) {
   const location = useLocation();
   const [authReady, setAuthReady] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [hasAdminBypass, setHasAdminBypass] = useState(false);
+
+  useEffect(() => {
+    if (!allowAdminBypass || typeof window === "undefined") {
+      return;
+    }
+
+    setHasAdminBypass(window.sessionStorage.getItem("admin-access-granted") === "true");
+  }, [allowAdminBypass]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -28,7 +43,7 @@ function RequireAuth({ children }: { children: ReactNode }) {
     return <div className="min-h-screen flex items-center justify-center text-gray-600">Checking session...</div>;
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated && !(allowAdminBypass && hasAdminBypass)) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
@@ -53,7 +68,7 @@ function ProtectedReceiverPage() {
 
 function ProtectedAdminPage() {
   return (
-    <RequireAuth>
+    <RequireAuth allowAdminBypass>
       <AdminDashboard />
     </RequireAuth>
   );

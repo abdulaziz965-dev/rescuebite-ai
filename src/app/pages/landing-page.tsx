@@ -75,6 +75,8 @@ export function LandingPage() {
             <a href="#features" className="text-gray-600 hover:text-gray-900 transition-colors">Features</a>
             <a href="#impact" className="text-gray-600 hover:text-gray-900 transition-colors">Impact</a>
             <a href="#blog" className="text-gray-600 hover:text-gray-900 transition-colors">Blog</a>
+            <Link to="/receiver" className="text-gray-600 hover:text-gray-900 transition-colors">Receiver</Link>
+            <Link to="/volunteer" className="text-gray-600 hover:text-gray-900 transition-colors">Volunteer</Link>
           </div>
           
           <Link to="/login">
@@ -114,9 +116,14 @@ export function LandingPage() {
                     <ArrowRight className="w-5 h-5 ml-2" />
                   </Button>
                 </Link>
-                <Link to="/login">
+                <Link to="/receiver">
                   <Button size="lg" variant="outline" className="rounded-full text-lg px-8 border-2">
                     Find Food
+                  </Button>
+                </Link>
+                <Link to="/volunteer">
+                  <Button size="lg" variant="outline" className="rounded-full text-lg px-8 border-2">
+                    Volunteer
                   </Button>
                 </Link>
               </div>
@@ -345,10 +352,10 @@ export function LandingPage() {
             <div>
               <h4 className="font-semibold mb-4">Platform</h4>
               <ul className="space-y-2 text-gray-400">
-                <li><a href="#" className="hover:text-white transition-colors">For Donors</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">For Receivers</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">For Volunteers</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">For NGOs</a></li>
+                <li><Link to="/donor" className="hover:text-white transition-colors">For Donors</Link></li>
+                <li><Link to="/receiver" className="hover:text-white transition-colors">For Receivers</Link></li>
+                <li><Link to="/volunteer" className="hover:text-white transition-colors">For Volunteers</Link></li>
+                <li><Link to="/receiver" className="hover:text-white transition-colors">For NGOs</Link></li>
               </ul>
             </div>
 

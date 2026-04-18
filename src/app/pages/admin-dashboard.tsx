@@ -50,12 +50,79 @@ import { collection, deleteDoc, doc, onSnapshot, serverTimestamp, updateDoc } fr
 import { db } from "../../firebase/config";
 
 type AdminTab = "overview" | "users" | "donations" | "analytics" | "settings";
+type VerificationStatus = "pending" | "verified" | "rejected";
+
+const normalizeVerificationStatus = (value: unknown): VerificationStatus => {
+  if (value === "verified" || value === "rejected") {
+    return value;
+  }
+  return "pending";
+};
+
+const getAutoVerificationStatus = (userRecord: any): VerificationStatus => {
+  const role = typeof userRecord?.role === "string" ? userRecord.role : "";
+
+  if (role === "donor" && Boolean(userRecord?.donorDigiLockerVerified)) {
+    return "verified";
+  }
+
+  if (role === "volunteer" && Boolean(userRecord?.volunteerDigiLockerVerified)) {
+    return "verified";
+  }
+
+  if (role === "receiver") {
+    if (userRecord?.receiverType === "ngo") {
+      if (Boolean(userRecord?.ngoDocumentVerified ?? userRecord?.ngoLinkedToApp)) {
+        return "verified";
+      }
+    } else if (Boolean(userRecord?.receiverDigiLockerVerified)) {
+      return "verified";
+    }
+  }
+
+  return normalizeVerificationStatus(userRecord?.verificationStatus);
+};
+
+const getVerificationMethodLabel = (userRecord: any): string => {
+  const role = typeof userRecord?.role === "string" ? userRecord.role : "";
+  const providerRaw =
+    role === "donor"
+      ? userRecord?.donorVerificationProvider
+      : role === "volunteer"
+      ? userRecord?.volunteerVerificationProvider
+      : role === "receiver" && userRecord?.receiverType === "ngo"
+      ? userRecord?.ngoDocumentVerificationProvider
+      : role === "receiver"
+      ? userRecord?.receiverVerificationProvider
+      : "";
+
+  const provider = typeof providerRaw === "string" ? providerRaw.trim().toLowerCase() : "";
+  if (!provider) {
+    return "Not Available";
+  }
+
+  if (provider.includes("open-public")) {
+    return "Open Public Checks";
+  }
+  if (provider.includes("digilocker")) {
+    return "DigiLocker";
+  }
+  if (provider.includes("mock")) {
+    return "Mock Verification";
+  }
+  if (provider.includes("ngo")) {
+    return "NGO Document Check";
+  }
+
+  return providerRaw;
+};
 
 export function AdminDashboard() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<AdminTab>("overview");
   const [donations, setDonations] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
+  const [impactLedgerEntries, setImpactLedgerEntries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionMessage, setActionMessage] = useState("");
   const [actionLoadingUserId, setActionLoadingUserId] = useState<string | null>(null);
@@ -102,11 +169,36 @@ export function AdminDashboard() {
       () => undefined
     );
 
+    const unsubImpactLedger = onSnapshot(
+      collection(db, "impactLedger"),
+      (snapshot) => {
+        const entries = snapshot.docs
+          .map((docSnapshot) => ({ id: docSnapshot.id, ...docSnapshot.data() }))
+          .sort((a: any, b: any) => {
+            const timeA = a.createdAt?.toDate?.().getTime() || 0;
+            const timeB = b.createdAt?.toDate?.().getTime() || 0;
+            return timeB - timeA;
+          })
+          .slice(0, 8);
+        setImpactLedgerEntries(entries);
+      },
+      () => undefined
+    );
+
     return () => {
       unsubDonations();
       unsubUsers();
+      unsubImpactLedger();
     };
   }, []);
+
+  const shortHash = (value: unknown) => {
+    const raw = typeof value === "string" ? value : "";
+    if (!raw) {
+      return "-";
+    }
+    return `${raw.slice(0, 10)}...${raw.slice(-8)}`;
+  };
 
   const analytics = useMemo(() => {
     const totalDonations = donations.length;
@@ -277,6 +369,7 @@ export function AdminDashboard() {
       const role = typeof userRecord.role === "string" ? userRecord.role : "user";
       const email = typeof userRecord.email === "string" ? userRecord.email : "-";
       const uid = typeof userRecord.uid === "string" ? userRecord.uid : userRecord.id;
+      const verificationStatus = getAutoVerificationStatus(userRecord);
       return {
         id: userRecord.id,
         uid,
@@ -289,9 +382,32 @@ export function AdminDashboard() {
         flagged: Boolean(userRecord.adminFlagged),
         banned: Boolean(userRecord.banned),
         warnings: Number(userRecord.adminWarningCount || 0),
+        verificationStatus,
+        verificationMethod: getVerificationMethodLabel(userRecord),
       };
     });
   }, [donations, users]);
+
+  const verificationReviewRows = useMemo(() => {
+    return users
+      .filter((userRecord) => {
+        const role = typeof userRecord.role === "string" ? userRecord.role : "";
+        return role === "donor" || (role === "receiver" && userRecord.receiverType === "ngo");
+      })
+      .map((userRecord) => {
+        const role = typeof userRecord.role === "string" ? userRecord.role : "user";
+        const typeLabel = role === "donor" ? "Donor" : "NGO";
+
+        return {
+          id: userRecord.id,
+          name: getUserDisplayName(userRecord),
+          type: typeLabel,
+          status: getAutoVerificationStatus(userRecord),
+          verificationMethod: getVerificationMethodLabel(userRecord),
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [users]);
 
   const latestDonations = useMemo(() => {
     return [...donations]
@@ -391,6 +507,40 @@ export function AdminDashboard() {
       setActionMessage("User profile deleted from database.");
     } catch {
       setActionMessage("Could not delete this user profile right now.");
+    } finally {
+      setActionLoadingUserId(null);
+    }
+  };
+
+  const handleApproveVerification = async (userId: string) => {
+    setActionLoadingUserId(userId);
+    setActionMessage("");
+    try {
+      await updateDoc(doc(db, "users", userId), {
+        verificationStatus: "verified",
+        verificationReviewedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      setActionMessage("Verification approved successfully.");
+    } catch {
+      setActionMessage("Could not approve verification right now.");
+    } finally {
+      setActionLoadingUserId(null);
+    }
+  };
+
+  const handleRejectVerification = async (userId: string) => {
+    setActionLoadingUserId(userId);
+    setActionMessage("");
+    try {
+      await updateDoc(doc(db, "users", userId), {
+        verificationStatus: "rejected",
+        verificationReviewedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      setActionMessage("Verification rejected.");
+    } catch {
+      setActionMessage("Could not reject verification right now.");
     } finally {
       setActionLoadingUserId(null);
     }
@@ -518,6 +668,46 @@ export function AdminDashboard() {
                   </div>
                 </Card>
               </div>
+
+              <Card className="mt-6 p-8 rounded-3xl border-0 shadow-lg">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-xl font-bold">Impact Receipt Ledger</h2>
+                  <Badge className="rounded-full bg-[#e0f2fe] text-[#0c4a6e]">{impactLedgerEntries.length} Recent</Badge>
+                </div>
+                <p className="text-sm text-gray-600 mb-5">
+                  Tamper-evident chain receipts created when a volunteer completes and verifies delivery proof.
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-gray-200">
+                        <th className="text-left py-3 px-4 font-medium text-gray-600">Receipt</th>
+                        <th className="text-left py-3 px-4 font-medium text-gray-600">Donation</th>
+                        <th className="text-left py-3 px-4 font-medium text-gray-600">Sequence</th>
+                        <th className="text-left py-3 px-4 font-medium text-gray-600">Hash</th>
+                        <th className="text-left py-3 px-4 font-medium text-gray-600">Previous</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {impactLedgerEntries.length > 0 ? impactLedgerEntries.map((entry) => (
+                        <tr key={entry.id} className="border-b border-gray-100 hover:bg-gray-50">
+                          <td className="py-4 px-4 font-medium">{entry.receiptId || "-"}</td>
+                          <td className="py-4 px-4 text-gray-600">{entry.payload?.foodName || entry.donationId || "-"}</td>
+                          <td className="py-4 px-4 text-gray-600">{entry.sequence ?? "-"}</td>
+                          <td className="py-4 px-4 text-xs text-gray-500">{shortHash(entry.hash)}</td>
+                          <td className="py-4 px-4 text-xs text-gray-500">{shortHash(entry.previousHash)}</td>
+                        </tr>
+                      )) : (
+                        <tr>
+                          <td colSpan={5} className="py-6 text-center text-gray-500">
+                            No impact receipts yet. Complete a delivery to generate the first ledger entry.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
             </>
           )}
 
@@ -560,6 +750,14 @@ export function AdminDashboard() {
                         </td>
                         <td className="py-4 px-4">
                           <div className="flex flex-wrap gap-2">
+                            {userRecord.verificationStatus === "verified" && (
+                              <Badge className="rounded-full bg-[#dbeafe] text-[#1d4ed8]">Verified</Badge>
+                            )}
+                            {userRecord.verificationMethod !== "Not Available" && (
+                              <Badge className="rounded-full bg-[#e0f2fe] text-[#0c4a6e]">
+                                Method: {userRecord.verificationMethod}
+                              </Badge>
+                            )}
                             {userRecord.banned ? (
                               <Badge className="rounded-full bg-[#fee2e2] text-[#991b1b]">Banned</Badge>
                             ) : userRecord.flagged ? (
@@ -624,6 +822,90 @@ export function AdminDashboard() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+
+              <div className="mt-8 rounded-3xl border border-[#e2e8f0] bg-gradient-to-br from-white to-[#f8fafc] p-6 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold">Trust Verification Review</h3>
+                  <Badge className="rounded-full bg-[#e0e7ff] text-[#3730a3]">{verificationReviewRows.length} Reviews</Badge>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-gray-200">
+                        <th className="text-left py-3 px-4 font-medium text-gray-600">Name</th>
+                        <th className="text-left py-3 px-4 font-medium text-gray-600">Type</th>
+                        <th className="text-left py-3 px-4 font-medium text-gray-600">Status</th>
+                        <th className="text-left py-3 px-4 font-medium text-gray-600">Method</th>
+                        <th className="text-left py-3 px-4 font-medium text-gray-600">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {verificationReviewRows.length > 0 ? verificationReviewRows.map((row) => (
+                        <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50">
+                          <td className="py-4 px-4 font-medium">{row.name}</td>
+                          <td className="py-4 px-4">
+                            <Badge className="rounded-full bg-[#f1f5f9] text-[#334155]">{row.type}</Badge>
+                          </td>
+                          <td className="py-4 px-4">
+                            <Badge
+                              className={`rounded-full border-0 shadow-sm ${
+                                row.status === "verified"
+                                  ? "bg-gradient-to-r from-[#d1fae5] to-[#a7f3d0] text-[#047857]"
+                                  : row.status === "rejected"
+                                  ? "bg-gradient-to-r from-[#fee2e2] to-[#fecaca] text-[#991b1b]"
+                                  : "bg-gradient-to-r from-[#e0e7ff] to-[#dbeafe] text-[#1d4ed8]"
+                              }`}
+                            >
+                              {row.status === "verified" ? "Verified" : row.status === "rejected" ? "Rejected" : "Pending"}
+                            </Badge>
+                          </td>
+                          <td className="py-4 px-4">
+                            <Badge className="rounded-full bg-[#e0f2fe] text-[#0c4a6e]">
+                              {row.verificationMethod}
+                            </Badge>
+                          </td>
+                          <td className="py-4 px-4">
+                            <div className="flex flex-wrap gap-2">
+                              {row.status === "verified" ? (
+                                <Badge className="rounded-full bg-[#d1fae5] text-[#047857]">Auto Verified</Badge>
+                              ) : (
+                                <>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    className="rounded-full bg-[#10b981] hover:bg-[#047857]"
+                                    disabled={actionLoadingUserId === row.id}
+                                    onClick={() => handleApproveVerification(row.id)}
+                                  >
+                                    Approve
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="rounded-full border-[#ef4444] text-[#b91c1c] hover:bg-[#fee2e2]"
+                                    disabled={actionLoadingUserId === row.id}
+                                    onClick={() => handleRejectVerification(row.id)}
+                                  >
+                                    Reject
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )) : (
+                        <tr>
+                          <td colSpan={5} className="py-6 text-center text-gray-500">
+                            No donor or NGO profiles available for verification review.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </Card>
           )}

@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
@@ -18,7 +18,6 @@ import {
 import { ImageWithFallback } from "../components/figma/ImageWithFallback";
 import { collection, doc, getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
 import {
-  browserLocalPersistence,
   browserSessionPersistence,
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
@@ -132,12 +131,12 @@ const roles = [
 
 export function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [isSignup, setIsSignup] = useState(false);
   const [selectedRole, setSelectedRole] = useState<string | null>(null);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [rememberMe, setRememberMe] = useState(false);
   const [users, setUsers] = useState<Array<{ id: string; role?: string }>>([]);
   const [donations, setDonations] = useState<any[]>([]);
   const [authLoading, setAuthLoading] = useState(false);
@@ -156,10 +155,56 @@ export function LoginPage() {
   const [restaurantName, setRestaurantName] = useState("");
   const [otherDonorLabel, setOtherDonorLabel] = useState("");
   const [donorLocation, setDonorLocation] = useState("");
+  const [donorGovernmentId, setDonorGovernmentId] = useState("");
+  const [donorDigiLockerVerified, setDonorDigiLockerVerified] = useState(false);
   const [volunteerPhoneNumber, setVolunteerPhoneNumber] = useState("");
   const [volunteerGovernmentId, setVolunteerGovernmentId] = useState("");
   const [volunteerDigiLockerVerified, setVolunteerDigiLockerVerified] = useState(false);
   const [volunteerGuidelinesAccepted, setVolunteerGuidelinesAccepted] = useState(false);
+  const [identityVerificationLoading, setIdentityVerificationLoading] = useState(false);
+
+  const resolveDigiLockerRedirectUrl = (role: "donor" | "volunteer") => {
+    const currentUrl = new URL(window.location.href);
+    const callbackUrl = `${currentUrl.origin}${currentUrl.pathname}`;
+    const authBaseUrl = ((import.meta as any).env?.VITE_DIGILOCKER_AUTH_URL as string | undefined)?.trim();
+    const clientId = ((import.meta as any).env?.VITE_DIGILOCKER_CLIENT_ID as string | undefined)?.trim();
+
+    if (!authBaseUrl) {
+      const mockUrl = new URL(callbackUrl);
+      mockUrl.searchParams.set("digilocker_status", "verified");
+      mockUrl.searchParams.set("digilocker_role", role);
+      mockUrl.searchParams.set("digilocker_reference", `MOCK-DL-${Date.now()}`);
+      return mockUrl.toString();
+    }
+
+    const authUrl = new URL(authBaseUrl);
+    authUrl.searchParams.set("redirect_uri", callbackUrl);
+    authUrl.searchParams.set("state", role);
+    if (clientId) {
+      authUrl.searchParams.set("client_id", clientId);
+    }
+    return authUrl.toString();
+  };
+
+  const startDigiLockerVerification = (role: "donor" | "volunteer") => {
+    if (role === "donor") {
+      if (!fullName.trim() || !donorGovernmentId.trim()) {
+        setMessage("Enter donor name and Aadhaar/government ID before DigiLocker verification.");
+        return;
+      }
+    }
+
+    if (role === "volunteer") {
+      if (!fullName.trim() || !volunteerPhoneNumber.trim() || !volunteerGovernmentId.trim()) {
+        setMessage("Enter volunteer name, phone number, and Aadhaar/government ID before DigiLocker verification.");
+        return;
+      }
+    }
+
+    setIdentityVerificationLoading(true);
+    setMessage("Redirecting to DigiLocker...");
+    window.location.assign(resolveDigiLockerRedirectUrl(role));
+  };
 
   useEffect(() => {
     const usersCollection = collection(db, "users");
@@ -212,23 +257,6 @@ export function LoginPage() {
           return;
         }
 
-        // If no redirect result, check if user is already authenticated
-        if (auth.currentUser && isMounted) {
-          console.log("User already authenticated:", auth.currentUser.email);
-          const userDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
-          if (userDoc.exists() && userDoc.data().role) {
-            navigate(resolveRoleLink(userDoc.data().role as string));
-            return;
-          }
-          // User exists but no role set yet - continue onboarding
-          try {
-            await continueGoogleSignIn(auth.currentUser);
-          } catch (continueError: any) {
-            console.error("continueGoogleSignIn failed for existing user:", continueError);
-            setMessage(`Setup failed: ${continueError?.message || "Unknown error"}. Please try again.`);
-          }
-          return;
-        }
       } catch (error: any) {
         if (!isMounted) return;
 
@@ -261,6 +289,41 @@ export function LoginPage() {
     };
   }, [navigate]);
 
+  useEffect(() => {
+    const query = new URLSearchParams(location.search);
+    const status = query.get("digilocker_status");
+    const role = query.get("digilocker_role");
+
+    if (!status || !role) {
+      return;
+    }
+
+    const isVerified = status === "verified";
+
+    if (role === "donor") {
+      setDonorDigiLockerVerified(isVerified);
+      setSelectedRole("donor");
+      setMessage(
+        isVerified
+          ? "Donor Aadhaar verified through DigiLocker."
+          : "Donor verification was not completed. Please try again."
+      );
+    }
+
+    if (role === "volunteer") {
+      setVolunteerDigiLockerVerified(isVerified);
+      setSelectedRole("volunteer");
+      setMessage(
+        isVerified
+          ? "Volunteer Aadhaar verified through DigiLocker."
+          : "Volunteer verification was not completed. Please try again."
+      );
+    }
+
+    setIdentityVerificationLoading(false);
+    navigate(location.pathname, { replace: true });
+  }, [location.pathname, location.search, navigate]);
+
   const connectedNgoCount = useMemo(() => {
     return users.filter((user) => user.role === "receiver").length;
   }, [users]);
@@ -278,6 +341,20 @@ export function LoginPage() {
 
   const resolveRoleLink = (roleId?: string | null) => {
     return roles.find((role) => role.id === roleId)?.link || "/donor";
+  };
+
+  const resolveVerificationLink = (roleId?: string | null) => {
+    const baseLink = resolveRoleLink(roleId);
+    if (roleId === "donor") {
+      return `${baseLink}?tab=settings&verification=1`;
+    }
+    if (roleId === "receiver") {
+      return `${baseLink}?tab=settings&verification=1`;
+    }
+    if (roleId === "volunteer") {
+      return `${baseLink}?tab=profile&verification=1`;
+    }
+    return baseLink;
   };
 
   const googleRoles = roles.filter((role) =>
@@ -298,6 +375,12 @@ export function LoginPage() {
     setRestaurantName("");
     setOtherDonorLabel("");
     setDonorLocation("");
+    setDonorGovernmentId("");
+    setDonorDigiLockerVerified(false);
+    setVolunteerPhoneNumber("");
+    setVolunteerGovernmentId("");
+    setVolunteerDigiLockerVerified(false);
+    setVolunteerGuidelinesAccepted(false);
     setGoogleOnboardingUser(null);
   };
 
@@ -309,6 +392,14 @@ export function LoginPage() {
       return otherDonorLabel.trim();
     }
     return fallbackName.trim();
+  };
+
+  const verifyDonorWithDigiLocker = async () => {
+    startDigiLockerVerification("donor");
+  };
+
+  const verifyVolunteerWithDigiLocker = async () => {
+    startDigiLockerVerification("volunteer");
   };
 
   const continueGoogleSignIn = async (user: { uid: string; email: string | null; displayName: string | null }) => {
@@ -352,6 +443,12 @@ export function LoginPage() {
       setRestaurantName("");
       setOtherDonorLabel("");
       setDonorLocation("");
+      setDonorGovernmentId("");
+      setDonorDigiLockerVerified(false);
+      setVolunteerPhoneNumber("");
+      setVolunteerGovernmentId("");
+      setVolunteerDigiLockerVerified(false);
+      setVolunteerGuidelinesAccepted(false);
       setMessage("Google sign-in successful. Scroll down to complete role setup.");
     } catch (error: any) {
       console.error("continueGoogleSignIn exception:", error);
@@ -386,7 +483,7 @@ export function LoginPage() {
     event.preventDefault();
     setMessage("");
 
-    if (isSignup && selectedRole === "admin") {
+    if (selectedRole === "admin") {
       if (!adminAccessId.trim() || !adminAccessPassword.trim()) {
         setMessage("Please enter Admin ID and Admin Password.");
         return;
@@ -399,12 +496,19 @@ export function LoginPage() {
 
       setAuthLoading(true);
       try {
+        if (typeof window !== "undefined") {
+          window.sessionStorage.setItem("admin-access-granted", "true");
+        }
         setMessage("Admin access granted. Redirecting...");
         navigate("/admin");
       } finally {
         setAuthLoading(false);
       }
       return;
+    }
+
+    if (typeof window !== "undefined") {
+      window.sessionStorage.removeItem("admin-access-granted");
     }
 
     const trimmedEmail = email.trim().toLowerCase();
@@ -443,6 +547,10 @@ export function LoginPage() {
       }
       if (!donorLocation.trim()) {
         setMessage("Please enter your location.");
+        return;
+      }
+      if (!donorGovernmentId.trim()) {
+        setMessage("Please enter Aadhaar/government ID for donor verification.");
         return;
       }
     }
@@ -492,10 +600,6 @@ export function LoginPage() {
         setMessage("Please enter government ID.");
         return;
       }
-      if (!volunteerDigiLockerVerified) {
-        setMessage("Please verify your details using DigiLocker before continuing.");
-        return;
-      }
       if (!volunteerGuidelinesAccepted) {
         setMessage("Please accept volunteer guidelines to continue.");
         return;
@@ -504,10 +608,7 @@ export function LoginPage() {
 
     setAuthLoading(true);
     try {
-      await setPersistence(
-        auth,
-        rememberMe ? browserLocalPersistence : browserSessionPersistence
-      );
+      await setPersistence(auth, browserSessionPersistence);
 
       if (isSignup) {
         const credential = await createUserWithEmailAndPassword(
@@ -525,6 +626,21 @@ export function LoginPage() {
           donorCategory: selectedRole === "donor" ? donorCategory : null,
           donorDisplayName: selectedRole === "donor" ? getDonorDisplayName(fullName) : null,
           donorLocation: selectedRole === "donor" ? donorLocation.trim() : null,
+          donorGovernmentId: selectedRole === "donor" ? donorGovernmentId.trim() : null,
+          donorDigiLockerVerified: selectedRole === "donor" ? donorDigiLockerVerified : null,
+          donorVerificationProvider: selectedRole === "donor" ? "digilocker" : null,
+          verificationStatus:
+            selectedRole === "admin"
+              ? null
+              : selectedRole === "donor"
+              ? donorDigiLockerVerified
+                ? "verified"
+                : "pending"
+              : selectedRole === "volunteer"
+              ? volunteerDigiLockerVerified
+                ? "verified"
+                : "pending"
+              : "pending",
           email: trimmedEmail,
           role: selectedRole,
           receiverType: selectedRole === "receiver" ? (receiverType || "individual") : null,
@@ -543,8 +659,8 @@ export function LoginPage() {
           updatedAt: serverTimestamp(),
         });
 
-        setMessage("Account created successfully. Redirecting...");
-        navigate(resolveRoleLink(selectedRole));
+        setMessage("Account created successfully. Redirecting to verification...");
+        navigate(resolveVerificationLink(selectedRole));
         return;
       }
 
@@ -588,10 +704,7 @@ export function LoginPage() {
     setAuthLoading(true);
 
     try {
-      await setPersistence(
-        auth,
-        rememberMe ? browserLocalPersistence : browserSessionPersistence
-      );
+      await setPersistence(auth, browserSessionPersistence);
 
       const provider = new GoogleAuthProvider();
       provider.addScope("profile");
@@ -725,6 +838,10 @@ export function LoginPage() {
         setMessage("Please enter your donor label/name.");
         return;
       }
+      if (!donorGovernmentId.trim()) {
+        setMessage("Please enter Aadhaar/government ID for donor verification.");
+        return;
+      }
     }
 
     setAuthLoading(true);
@@ -739,6 +856,21 @@ export function LoginPage() {
             selectedRole === "donor"
               ? getDonorDisplayName(googleOnboardingUser.fullName || googleOnboardingUser.email.split("@")[0] || "Donor")
               : null,
+          donorGovernmentId: selectedRole === "donor" ? donorGovernmentId.trim() : null,
+          donorDigiLockerVerified: selectedRole === "donor" ? donorDigiLockerVerified : null,
+          donorVerificationProvider: selectedRole === "donor" ? "digilocker" : null,
+          verificationStatus:
+            selectedRole === "admin"
+              ? null
+              : selectedRole === "donor"
+              ? donorDigiLockerVerified
+                ? "verified"
+                : "pending"
+              : selectedRole === "volunteer"
+              ? volunteerDigiLockerVerified
+                ? "verified"
+                : "pending"
+              : "pending",
           email: googleOnboardingUser.email,
           role: selectedRole,
           receiverType: selectedRole === "receiver" ? receiverType : null,
@@ -754,9 +886,9 @@ export function LoginPage() {
         { merge: true }
       );
 
-      setMessage("Account setup completed. Redirecting...");
+      setMessage("Account setup completed. Redirecting to verification...");
       resetGoogleOnboardingState();
-      navigate(resolveRoleLink(selectedRole));
+      navigate(resolveVerificationLink(selectedRole));
     } catch {
       setMessage("Could not save profile setup. Please try again.");
     } finally {
@@ -865,7 +997,7 @@ export function LoginPage() {
                 </div>
               )}
 
-              {!(isSignup && selectedRole === "admin") && (
+              {selectedRole !== "admin" && (
                 <div>
                   <Label htmlFor="email">Email Address</Label>
                   <div className="relative mt-2">
@@ -882,7 +1014,7 @@ export function LoginPage() {
                 </div>
               )}
 
-              {!(isSignup && selectedRole === "admin") && (
+              {selectedRole !== "admin" && (
                 <div>
                   <Label htmlFor="password">Password</Label>
                   <div className="relative mt-2">
@@ -900,27 +1032,56 @@ export function LoginPage() {
               )}
 
               {!isSignup && (
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="remember"
-                      className="rounded"
-                      checked={rememberMe}
-                      onChange={(event) => setRememberMe(event.target.checked)}
-                    />
-                    <label htmlFor="remember" className="text-sm text-gray-600">
-                      Remember me
-                    </label>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="rounded-full h-10"
+                      onClick={() => {
+                        setSelectedRole(selectedRole === "admin" ? null : "admin");
+                        setMessage("");
+                      }}
+                      disabled={authLoading}
+                    >
+                      {selectedRole === "admin" ? "Back To User Sign In" : "Admin Login"}
+                    </Button>
+
+                    <button
+                      type="button"
+                      onClick={handleForgotPassword}
+                      className="text-sm text-[#10b981] hover:underline"
+                      disabled={authLoading || selectedRole === "admin"}
+                    >
+                      Forgot password?
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleForgotPassword}
-                    className="text-sm text-[#10b981] hover:underline"
-                    disabled={authLoading}
-                  >
-                    Forgot password?
-                  </button>
+
+                  {selectedRole === "admin" && (
+                    <div className="space-y-4">
+                      <div>
+                        <Label htmlFor="signinAdminId">Admin ID</Label>
+                        <Input
+                          id="signinAdminId"
+                          placeholder="Enter admin ID"
+                          className="mt-2 rounded-2xl h-12"
+                          value={adminAccessId}
+                          onChange={(event) => setAdminAccessId(event.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="signinAdminPassword">Admin Password</Label>
+                        <Input
+                          id="signinAdminPassword"
+                          type="password"
+                          placeholder="Enter admin password"
+                          className="mt-2 rounded-2xl h-12"
+                          value={adminAccessPassword}
+                          onChange={(event) => setAdminAccessPassword(event.target.value)}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1004,6 +1165,41 @@ export function LoginPage() {
                       value={donorLocation}
                       onChange={(event) => setDonorLocation(event.target.value)}
                     />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="donorGovId">Aadhaar / Government ID</Label>
+                    <Input
+                      id="donorGovId"
+                      placeholder="Enter Aadhaar / Govt ID"
+                      className="mt-2 rounded-2xl h-12"
+                      value={donorGovernmentId}
+                      onChange={(event) => {
+                        setDonorGovernmentId(event.target.value);
+                        setDonorDigiLockerVerified(false);
+                      }}
+                    />
+                  </div>
+
+                  <div className="rounded-2xl border border-gray-200 p-4 bg-gray-50 space-y-3">
+                    <p className="text-sm text-gray-700">
+                      {donorCategory === "restaurant-owner"
+                        ? "Hotel/restaurant donor must verify Aadhaar through DigiLocker before activation."
+                        : "Individual donor must verify Aadhaar through DigiLocker before activation."}
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="rounded-full"
+                      onClick={verifyDonorWithDigiLocker}
+                      disabled={identityVerificationLoading}
+                    >
+                      {identityVerificationLoading
+                        ? "Verifying..."
+                        : donorDigiLockerVerified
+                        ? "DigiLocker Verified"
+                        : "Verify with DigiLocker"}
+                    </Button>
                   </div>
                 </div>
               )}
@@ -1192,16 +1388,14 @@ export function LoginPage() {
                       type="button"
                       variant="outline"
                       className="rounded-full"
-                      onClick={() => {
-                        if (!fullName.trim() || !volunteerPhoneNumber.trim() || !volunteerGovernmentId.trim()) {
-                          setMessage("Enter volunteer name, phone number, and government ID before DigiLocker verification.");
-                          return;
-                        }
-                        setVolunteerDigiLockerVerified(true);
-                        setMessage("DigiLocker verification successful.");
-                      }}
+                      onClick={verifyVolunteerWithDigiLocker}
+                      disabled={identityVerificationLoading}
                     >
-                      {volunteerDigiLockerVerified ? "DigiLocker Verified" : "Verify with DigiLocker"}
+                      {identityVerificationLoading
+                        ? "Verifying..."
+                        : volunteerDigiLockerVerified
+                        ? "DigiLocker Verified"
+                        : "Verify with DigiLocker"}
                     </Button>
                   </div>
 
@@ -1256,11 +1450,15 @@ export function LoginPage() {
                     ? selectedRole === "admin"
                       ? "Verifying Admin Access..."
                       : "Creating Account..."
+                    : selectedRole === "admin"
+                    ? "Verifying Admin Access..."
                     : "Signing In..."
                   : isSignup
                   ? selectedRole === "admin"
                     ? "Access Admin Panel"
                     : "Create Account"
+                  : selectedRole === "admin"
+                  ? "Access Admin Panel"
                   : "Sign In"}
                 <ArrowRight className="w-5 h-5 ml-2" />
               </Button>
@@ -1545,6 +1743,39 @@ export function LoginPage() {
                           />
                         </div>
                       )}
+
+                      <div>
+                        <Label htmlFor="googleDonorGovId">Aadhaar / Government ID</Label>
+                        <Input
+                          id="googleDonorGovId"
+                          placeholder="Enter Aadhaar / Govt ID"
+                          className="mt-2 rounded-2xl h-11"
+                          value={donorGovernmentId}
+                          onChange={(event) => {
+                            setDonorGovernmentId(event.target.value);
+                            setDonorDigiLockerVerified(false);
+                          }}
+                        />
+                      </div>
+
+                      <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 space-y-3">
+                        <p className="text-sm text-gray-700">
+                          Donors must complete Aadhaar verification through DigiLocker.
+                        </p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="rounded-full"
+                          onClick={verifyDonorWithDigiLocker}
+                          disabled={identityVerificationLoading}
+                        >
+                          {identityVerificationLoading
+                            ? "Verifying..."
+                            : donorDigiLockerVerified
+                            ? "DigiLocker Verified"
+                            : "Verify with DigiLocker"}
+                        </Button>
+                      </div>
                     </div>
                   )}
 

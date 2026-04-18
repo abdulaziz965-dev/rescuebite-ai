@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
@@ -35,6 +35,7 @@ import { addDoc, collection, doc, getDoc, onSnapshot, serverTimestamp, setDoc } 
 import { sendPasswordResetEmail, updateProfile } from "firebase/auth";
 import { auth, db } from "../../firebase/config";
 import { sendNotification } from "../lib/notifications";
+import { verifyIndianGovernmentIdentity } from "../lib/india-verification";
 
 type Donation = {
   id: string;
@@ -54,6 +55,8 @@ type Donation = {
   claimedByProfileLabel?: string;
   claimedProofImages?: string[];
   claimedProofDescription?: string;
+  pickupLatitude?: number;
+  pickupLongitude?: number;
 };
 
 type NGOProfile = {
@@ -72,8 +75,151 @@ type ReportableProfile = {
   targetType: "ngo" | "individual";
 };
 
+type VerificationStatus = "pending" | "verified" | "rejected";
+type DonorCategory = "individual" | "restaurant-owner" | "other";
+
+type AddressSuggestion = {
+  id: string;
+  placeId: string;
+  mainText: string;
+  secondaryText: string;
+  fullText: string;
+  latitude: number | null;
+  longitude: number | null;
+};
+
+const RAPIDAPI_HOST = "google-map-places-new-v2.p.rapidapi.com";
+const RAPIDAPI_AUTOCOMPLETE_ENDPOINT = `https://${RAPIDAPI_HOST}/v1/places/autocomplete`;
+const RAPIDAPI_PLACE_DETAILS_ENDPOINT = (placeId: string) =>
+  `https://${RAPIDAPI_HOST}/v1/places/${encodeURIComponent(placeId)}`;
+
+const normalizeTextValue = (value: unknown): string => {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+
+  if (value && typeof value === "object") {
+    const nestedText = (value as { text?: unknown }).text;
+    if (typeof nestedText === "string") {
+      return nestedText.trim();
+    }
+
+    const nestedDisplay = (value as { displayName?: unknown }).displayName;
+    if (typeof nestedDisplay === "string") {
+      return nestedDisplay.trim();
+    }
+  }
+
+  return "";
+};
+
+const normalizeNumericValue = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+};
+
+const extractCoordinates = (value: any): { latitude: number | null; longitude: number | null } => {
+  const latitude =
+    normalizeNumericValue(value?.location?.latitude) ??
+    normalizeNumericValue(value?.location?.lat) ??
+    normalizeNumericValue(value?.latLng?.latitude) ??
+    normalizeNumericValue(value?.geometry?.location?.lat?.()) ??
+    normalizeNumericValue(value?.geometry?.location?.lat) ??
+    normalizeNumericValue(value?.latitude) ??
+    normalizeNumericValue(value?.lat) ??
+    normalizeNumericValue(value?.y);
+
+  const longitude =
+    normalizeNumericValue(value?.location?.longitude) ??
+    normalizeNumericValue(value?.location?.lng) ??
+    normalizeNumericValue(value?.latLng?.longitude) ??
+    normalizeNumericValue(value?.geometry?.location?.lng?.()) ??
+    normalizeNumericValue(value?.geometry?.location?.lng) ??
+    normalizeNumericValue(value?.longitude) ??
+    normalizeNumericValue(value?.lng) ??
+    normalizeNumericValue(value?.x);
+
+  return { latitude, longitude };
+};
+
+const normalizeAddressSuggestions = (payload: any): AddressSuggestion[] => {
+  const rawSuggestions = Array.isArray(payload?.suggestions)
+    ? payload.suggestions
+    : Array.isArray(payload?.predictions)
+      ? payload.predictions
+      : Array.isArray(payload?.results)
+        ? payload.results
+        : [];
+
+  return rawSuggestions
+    .map((suggestion: any, index: number) => {
+      const prediction = suggestion?.placePrediction ?? suggestion?.place_prediction ?? suggestion?.prediction ?? suggestion;
+      const mainText =
+        normalizeTextValue(prediction?.structuredFormat?.mainText) ||
+        normalizeTextValue(prediction?.structured_format?.mainText) ||
+        normalizeTextValue(prediction?.structuredFormatting?.mainText) ||
+        normalizeTextValue(prediction?.structuredFormatting?.mainText?.text) ||
+        normalizeTextValue(prediction?.text) ||
+        normalizeTextValue(prediction?.description) ||
+        normalizeTextValue(prediction?.formattedAddress) ||
+        normalizeTextValue(prediction?.formatted_address) ||
+        normalizeTextValue(prediction?.name) ||
+        "Suggested address";
+
+      const secondaryText =
+        normalizeTextValue(prediction?.structuredFormat?.secondaryText) ||
+        normalizeTextValue(prediction?.structured_format?.secondaryText) ||
+        normalizeTextValue(prediction?.secondaryText) ||
+        normalizeTextValue(prediction?.secondary_text) ||
+        "";
+
+      const fullText =
+        normalizeTextValue(prediction?.text) ||
+        normalizeTextValue(prediction?.description) ||
+        normalizeTextValue(prediction?.formattedAddress) ||
+        normalizeTextValue(prediction?.formatted_address) ||
+        [mainText, secondaryText].filter(Boolean).join(", ") ||
+        mainText;
+
+      const placeId =
+        normalizeTextValue(prediction?.placeId) ||
+        normalizeTextValue(prediction?.place_id) ||
+        normalizeTextValue(prediction?.id) ||
+        `suggestion-${index}`;
+
+      const coordinates = extractCoordinates(prediction);
+
+      return {
+        id: placeId,
+        placeId,
+        mainText,
+        secondaryText,
+        fullText,
+        latitude: coordinates.latitude,
+        longitude: coordinates.longitude,
+      };
+    })
+    .filter((suggestion: AddressSuggestion) => suggestion.fullText || suggestion.mainText);
+};
+
+const normalizeVerificationStatus = (value: unknown): VerificationStatus => {
+  if (value === "verified" || value === "rejected") {
+    return value;
+  }
+  return "pending";
+};
+
 export function DonorDashboard() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
   const [foodName, setFoodName] = useState("");
@@ -97,6 +243,7 @@ export function DonorDashboard() {
   const [ngoProfiles, setNgoProfiles] = useState<NGOProfile[]>([]);
   const [ngoSearchQuery, setNgoSearchQuery] = useState("");
   const [ngoTaskFilter, setNgoTaskFilter] = useState("all");
+  const [shortlistedNgoIds, setShortlistedNgoIds] = useState<string[]>([]);
   const [isNgoLoading, setIsNgoLoading] = useState(true);
   const [reportableProfiles, setReportableProfiles] = useState<ReportableProfile[]>([]);
   const [reportTargetType, setReportTargetType] = useState<"ngo" | "individual">("ngo");
@@ -113,6 +260,264 @@ export function DonorDashboard() {
   const [selectedProofDonationName, setSelectedProofDonationName] = useState("");
   const [selectedProofReceiverLabel, setSelectedProofReceiverLabel] = useState("");
   const [selectedProofDescription, setSelectedProofDescription] = useState("");
+  const [verificationStatus, setVerificationStatus] = useState<VerificationStatus>("pending");
+  const [donorGovernmentId, setDonorGovernmentId] = useState("");
+  const [donorDigiLockerVerified, setDonorDigiLockerVerified] = useState(false);
+  const [donorVerifiedAt, setDonorVerifiedAt] = useState<{ toDate?: () => Date } | undefined>(undefined);
+  const [donorVerificationLoading, setDonorVerificationLoading] = useState(false);
+  const [donorCategory, setDonorCategory] = useState<DonorCategory | null>(null);
+  const [donorLocation, setDonorLocation] = useState("");
+  const [houseNumber, setHouseNumber] = useState("");
+  const [houseName, setHouseName] = useState("");
+  const [pickupLatitude, setPickupLatitude] = useState<number | null>(null);
+  const [pickupLongitude, setPickupLongitude] = useState<number | null>(null);
+  const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
+  const [isAddressSuggestionsLoading, setIsAddressSuggestionsLoading] = useState(false);
+  const [addressLookupMessage, setAddressLookupMessage] = useState("");
+  const addressRequestIdRef = useRef(0);
+  const confirmedAddressRef = useRef("");
+
+  useEffect(() => {
+    const query = new URLSearchParams(location.search);
+    const tab = query.get("tab");
+    const requestedVerification = query.get("verification") === "1";
+    const validTabs = ["overview", "history", "donate", "analytics", "ngos", "settings"];
+
+    if (requestedVerification || tab === "settings") {
+      setActiveTab("settings");
+      if (requestedVerification) {
+        setSettingsMessage("Please complete your donor verification first.");
+      }
+      return;
+    }
+
+    if (tab && validTabs.includes(tab)) {
+      setActiveTab(tab);
+    }
+  }, [location.search]);
+
+  useEffect(() => {
+    const query = address.trim();
+    const rapidApiKey = (import.meta as any).env?.VITE_RAPIDAPI_KEY as string | undefined;
+
+    if (!rapidApiKey || query.length < 3 || query === confirmedAddressRef.current) {
+      setAddressSuggestions([]);
+      setIsAddressSuggestionsLoading(false);
+      setAddressLookupMessage("");
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      const requestId = addressRequestIdRef.current + 1;
+      addressRequestIdRef.current = requestId;
+      setIsAddressSuggestionsLoading(true);
+      setAddressLookupMessage("");
+
+      fetch(RAPIDAPI_AUTOCOMPLETE_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-rapidapi-host": RAPIDAPI_HOST,
+          "x-rapidapi-key": rapidApiKey,
+        },
+        body: JSON.stringify({
+          input: query,
+          languageCode: "en",
+          regionCode: "us",
+        }),
+      })
+        .then(async (response) => {
+          if (!response.ok) {
+            throw new Error(`autocomplete-request-failed:${response.status}`);
+          }
+
+          return response.json();
+        })
+        .then((payload) => {
+          if (addressRequestIdRef.current !== requestId) {
+            return;
+          }
+
+          const nextSuggestions = normalizeAddressSuggestions(payload).slice(0, 6);
+          setAddressSuggestions(nextSuggestions);
+          setAddressLookupMessage(nextSuggestions.length > 0 ? "" : "No address suggestions found.");
+        })
+        .catch(() => {
+          if (addressRequestIdRef.current !== requestId) {
+            return;
+          }
+
+          setAddressSuggestions([]);
+          setAddressLookupMessage("Could not load address suggestions right now.");
+        })
+        .finally(() => {
+          if (addressRequestIdRef.current === requestId) {
+            setIsAddressSuggestionsLoading(false);
+          }
+        });
+    }, 250);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [address]);
+
+  const handleAddressChange = (nextAddress: string) => {
+    confirmedAddressRef.current = "";
+    setAddress(nextAddress);
+    setPickupLatitude(null);
+    setPickupLongitude(null);
+    setAddressLookupMessage("");
+  };
+
+  const handleAddressSuggestionSelected = async (suggestion: AddressSuggestion) => {
+    const nextAddress = suggestion.fullText || suggestion.mainText;
+    confirmedAddressRef.current = nextAddress;
+    setAddress(nextAddress);
+    setAddressSuggestions([]);
+    setAddressLookupMessage("");
+
+    if (suggestion.latitude !== null && suggestion.longitude !== null) {
+      setPickupLatitude(suggestion.latitude);
+      setPickupLongitude(suggestion.longitude);
+    }
+
+    if (!suggestion.placeId) {
+      return;
+    }
+
+    const rapidApiKey = (import.meta as any).env?.VITE_RAPIDAPI_KEY as string | undefined;
+    if (!rapidApiKey) {
+      return;
+    }
+
+    try {
+      const response = await fetch(RAPIDAPI_PLACE_DETAILS_ENDPOINT(suggestion.placeId), {
+        method: "GET",
+        headers: {
+          "x-rapidapi-host": RAPIDAPI_HOST,
+          "x-rapidapi-key": rapidApiKey,
+        },
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      const payload = await response.json();
+      const place = payload?.place ?? payload?.result ?? payload;
+      const formattedAddress =
+        normalizeTextValue(place?.formattedAddress) ||
+        normalizeTextValue(place?.formatted_address) ||
+        normalizeTextValue(place?.address) ||
+        nextAddress;
+
+      const coordinates =
+        extractCoordinates(place?.location ?? place?.geometry?.location ?? place?.coordinates ?? place)
+        ?? { latitude: null, longitude: null };
+
+      setAddress(formattedAddress);
+      confirmedAddressRef.current = formattedAddress;
+
+      if (coordinates.latitude !== null && coordinates.longitude !== null) {
+        setPickupLatitude(coordinates.latitude);
+        setPickupLongitude(coordinates.longitude);
+      }
+    } catch {
+      if (suggestion.latitude === null || suggestion.longitude === null) {
+        setAddressLookupMessage("Saved the address text, but coordinates could not be loaded.");
+      }
+    }
+  };
+
+  const composeIndividualPickupAddress = (nextHouseNumber?: string, nextHouseName?: string) => {
+    return [
+      (nextHouseNumber ?? houseNumber).trim(),
+      (nextHouseName ?? houseName).trim(),
+      donorLocation.trim(),
+    ]
+      .filter(Boolean)
+      .join(", ");
+  };
+
+  useEffect(() => {
+    if (donorCategory !== "individual") {
+      return;
+    }
+
+    const nextAddress = composeIndividualPickupAddress();
+    setAddress(nextAddress);
+  }, [donorCategory, donorLocation]);
+
+  const resolveCoordinatesFromAddress = async (
+    rawAddress: string
+  ): Promise<{ address: string; latitude: number | null; longitude: number | null } | null> => {
+    const rapidApiKey = (import.meta as any).env?.VITE_RAPIDAPI_KEY as string | undefined;
+    const addressQuery = rawAddress.trim();
+    if (!rapidApiKey || !addressQuery) {
+      return null;
+    }
+
+    try {
+      const autocompleteResponse = await fetch(RAPIDAPI_AUTOCOMPLETE_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-rapidapi-host": RAPIDAPI_HOST,
+          "x-rapidapi-key": rapidApiKey,
+        },
+        body: JSON.stringify({
+          input: addressQuery,
+          languageCode: "en",
+          regionCode: "us",
+        }),
+      });
+
+      if (!autocompleteResponse.ok) {
+        return null;
+      }
+
+      const autocompletePayload = await autocompleteResponse.json();
+      const firstSuggestion = normalizeAddressSuggestions(autocompletePayload)[0];
+      if (!firstSuggestion) {
+        return null;
+      }
+
+      let nextAddress = firstSuggestion.fullText || firstSuggestion.mainText || addressQuery;
+      let nextLatitude = firstSuggestion.latitude;
+      let nextLongitude = firstSuggestion.longitude;
+
+      if ((nextLatitude === null || nextLongitude === null) && firstSuggestion.placeId) {
+        const detailsResponse = await fetch(RAPIDAPI_PLACE_DETAILS_ENDPOINT(firstSuggestion.placeId), {
+          method: "GET",
+          headers: {
+            "x-rapidapi-host": RAPIDAPI_HOST,
+            "x-rapidapi-key": rapidApiKey,
+          },
+        });
+
+        if (detailsResponse.ok) {
+          const detailsPayload = await detailsResponse.json();
+          const place = detailsPayload?.place ?? detailsPayload?.result ?? detailsPayload;
+          nextAddress =
+            normalizeTextValue(place?.formattedAddress) ||
+            normalizeTextValue(place?.formatted_address) ||
+            normalizeTextValue(place?.address) ||
+            nextAddress;
+
+          const coordinates = extractCoordinates(place?.location ?? place?.geometry?.location ?? place?.coordinates ?? place);
+          nextLatitude = coordinates.latitude;
+          nextLongitude = coordinates.longitude;
+        }
+      }
+
+      return {
+        address: nextAddress,
+        latitude: nextLatitude,
+        longitude: nextLongitude,
+      };
+    } catch {
+      return null;
+    }
+  };
 
   useEffect(() => {
     const loadProfileName = async () => {
@@ -131,8 +536,14 @@ export function DonorDashboard() {
         const userDoc = await getDoc(doc(db, "users", user.uid));
         const fullName = userDoc.exists() ? userDoc.data()?.fullName : "";
         const donorDisplayName = userDoc.exists() ? userDoc.data()?.donorDisplayName : "";
+        const donorCategoryFromDb = userDoc.exists() ? userDoc.data()?.donorCategory : null;
+        const donorLocationFromDb = userDoc.exists() ? userDoc.data()?.donorLocation : "";
+        const donorGovernmentIdFromDb = userDoc.exists() ? userDoc.data()?.donorGovernmentId : "";
+        const donorDigiLockerVerifiedFromDb = userDoc.exists() ? userDoc.data()?.donorDigiLockerVerified : false;
+        const donorVerifiedAtFromDb = userDoc.exists() ? userDoc.data()?.donorVerifiedAt : undefined;
         const photoFromDb = userDoc.exists() ? userDoc.data()?.photoURL : "";
         const phoneFromDb = userDoc.exists() ? userDoc.data()?.phoneNumber : "";
+        const verificationFromDb = userDoc.exists() ? userDoc.data()?.verificationStatus : "pending";
 
         if (typeof donorDisplayName === "string" && donorDisplayName.trim()) {
           setDonorGreetingName(donorDisplayName.trim());
@@ -149,6 +560,27 @@ export function DonorDashboard() {
         if (typeof phoneFromDb === "string") {
           setPhoneNumber(phoneFromDb);
         }
+        if (donorCategoryFromDb === "individual" || donorCategoryFromDb === "restaurant-owner" || donorCategoryFromDb === "other") {
+          setDonorCategory(donorCategoryFromDb);
+        }
+        if (typeof donorLocationFromDb === "string") {
+          const normalizedLocation = donorLocationFromDb.trim();
+          setDonorLocation(normalizedLocation);
+          if (donorCategoryFromDb === "restaurant-owner" && normalizedLocation) {
+            setAddress(normalizedLocation);
+            confirmedAddressRef.current = normalizedLocation;
+          }
+        }
+        if (typeof donorGovernmentIdFromDb === "string") {
+          setDonorGovernmentId(donorGovernmentIdFromDb.trim());
+        }
+        setDonorDigiLockerVerified(Boolean(donorDigiLockerVerifiedFromDb));
+        setDonorVerifiedAt(
+          donorVerifiedAtFromDb && typeof donorVerifiedAtFromDb.toDate === "function"
+            ? donorVerifiedAtFromDb
+            : undefined
+        );
+        setVerificationStatus(normalizeVerificationStatus(verificationFromDb));
       } catch {
         // Keep fallback behavior below when profile lookup fails.
       }
@@ -177,6 +609,22 @@ export function DonorDashboard() {
     const nextTheme = savedTheme === "dark" ? "dark" : "light";
     setThemeMode(nextTheme);
     document.documentElement.classList.toggle("dark", nextTheme === "dark");
+  }, []);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("donor-shortlisted-ngos");
+      if (!saved) {
+        return;
+      }
+
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        setShortlistedNgoIds(parsed.filter((id) => typeof id === "string"));
+      }
+    } catch {
+      // Keep empty shortlist when local storage is unavailable or malformed.
+    }
   }, []);
 
   useEffect(() => {
@@ -449,6 +897,15 @@ export function DonorDashboard() {
     });
   }, [ngoProfiles, ngoSearchQuery, ngoTaskFilter]);
 
+  const shortlistedNgos = useMemo(() => {
+    if (shortlistedNgoIds.length === 0) {
+      return [] as NGOProfile[];
+    }
+
+    const shortlistSet = new Set(shortlistedNgoIds);
+    return ngoProfiles.filter((ngo) => shortlistSet.has(ngo.id));
+  }, [ngoProfiles, shortlistedNgoIds]);
+
   const reportTargetOptions = useMemo(
     () => reportableProfiles.filter((profile) => profile.targetType === reportTargetType),
     [reportableProfiles, reportTargetType]
@@ -486,12 +943,55 @@ export function DonorDashboard() {
     return `${diffDays} day${diffDays > 1 ? "s" : ""} ago`;
   };
 
+  const formatExactDateTime = (value?: { toDate?: () => Date }) => {
+    const date = value?.toDate ? value.toDate() : null;
+    if (!date) {
+      return "";
+    }
+
+    return new Intl.DateTimeFormat("en-IN", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(date);
+  };
+
   const handleSubmitDonation = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!foodName || !quantity || !foodType || !expiryDate || !expiryTime || !urgency || !address) {
+
+    if (!foodName || !quantity || !foodType || !expiryDate || !expiryTime || !urgency) {
       alert("Please fill in all fields");
       return;
+    }
+
+    if (donorCategory === "individual" && (!houseNumber.trim() || !houseName.trim())) {
+      alert("Please provide house number and house name for pickup.");
+      return;
+    }
+
+    let finalAddress = address.trim();
+    if (donorCategory === "restaurant-owner" && donorLocation.trim()) {
+      finalAddress = donorLocation.trim();
+    }
+    if (donorCategory === "individual") {
+      finalAddress = composeIndividualPickupAddress();
+    }
+
+    if (!finalAddress) {
+      alert("Please provide a valid pickup address.");
+      return;
+    }
+
+    let finalPickupLatitude = pickupLatitude;
+    let finalPickupLongitude = pickupLongitude;
+    if (finalPickupLatitude === null || finalPickupLongitude === null) {
+      const resolved = await resolveCoordinatesFromAddress(finalAddress);
+      if (resolved) {
+        finalAddress = resolved.address;
+        finalPickupLatitude = resolved.latitude;
+        finalPickupLongitude = resolved.longitude;
+        setAddress(finalAddress);
+        confirmedAddressRef.current = finalAddress;
+      }
     }
 
     const combinedExpiryDateTime = `${expiryDate}T${expiryTime}`;
@@ -506,7 +1006,9 @@ export function DonorDashboard() {
         expiryClock: expiryTime,
         expiryTime: combinedExpiryDateTime,
         urgency,
-        address,
+        address: finalAddress,
+        pickupLatitude: finalPickupLatitude,
+        pickupLongitude: finalPickupLongitude,
         image: donationImage || null,
         donorUid: auth.currentUser?.uid || null,
         donorEmail: auth.currentUser?.email || null,
@@ -548,6 +1050,8 @@ export function DonorDashboard() {
       setExpiryTime("");
       setUrgency("");
       setAddress("");
+      setPickupLatitude(null);
+      setPickupLongitude(null);
       setDonationImage("");
 
       // Clear success message after 3 seconds
@@ -600,6 +1104,7 @@ export function DonorDashboard() {
         {
           photoURL: nextPhotoUrl,
           phoneNumber: nextPhone,
+          verificationStatus,
           updatedAt: serverTimestamp(),
         },
         { merge: true }
@@ -633,6 +1138,68 @@ export function DonorDashboard() {
       setSettingsMessage("Unable to send reset link right now. Please try again.");
     } finally {
       setSettingsSaving(false);
+    }
+  };
+
+  const handleVerifyDonorIdentity = async () => {
+    const user = auth.currentUser;
+    if (!user) {
+      setSettingsMessage("Please sign in again to verify Aadhaar.");
+      return;
+    }
+
+    if (!donorGovernmentId.trim()) {
+      setSettingsMessage("Please enter Aadhaar/government ID before verification.");
+      return;
+    }
+
+    setDonorVerificationLoading(true);
+    setSettingsMessage("");
+    try {
+      const verificationResult = await verifyIndianGovernmentIdentity({
+        governmentId: donorGovernmentId.trim(),
+        fullName: donorName,
+        ngoName: donorCategory === "restaurant-owner" ? donorGreetingName : "",
+        ngoWebsite: "",
+      });
+
+      const nextStatus: VerificationStatus =
+        verificationResult.status === "verified"
+          ? "verified"
+          : verificationResult.status === "rejected"
+            ? "rejected"
+            : "pending";
+
+      await setDoc(
+        doc(db, "users", user.uid),
+        {
+          donorGovernmentId: donorGovernmentId.trim(),
+          donorDigiLockerVerified: verificationResult.isVerified,
+          donorVerificationProvider: verificationResult.provider || "digilocker",
+          donorVerificationProviderRef: verificationResult.providerReferenceId || null,
+          donorVerificationReason: verificationResult.reason || null,
+          donorVerificationRaw: verificationResult.raw || null,
+          verificationStatus: nextStatus,
+          donorVerifiedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      setDonorDigiLockerVerified(verificationResult.isVerified);
+      setVerificationStatus(nextStatus);
+      if (verificationResult.isVerified) {
+        setDonorVerifiedAt({ toDate: () => new Date() });
+      }
+      setSettingsMessage(
+        verificationResult.isVerified
+          ? "Donor Aadhaar verified through DigiLocker."
+          : verificationResult.reason || "Verification submitted. Current status is pending review."
+      );
+    } catch {
+      setSettingsMessage("Could not verify donor Aadhaar right now. Please try again.");
+    } finally {
+      setDonorVerificationLoading(false);
     }
   };
 
@@ -708,6 +1275,7 @@ export function DonorDashboard() {
         {
           role: "volunteer",
           roleSwitchedFrom: "donor",
+          verificationStatus,
           roleSwitchedAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         },
@@ -721,6 +1289,15 @@ export function DonorDashboard() {
     } finally {
       setIsRoleSwitching(false);
     }
+  };
+
+  const handleToggleNgoShortlist = (ngoId: string) => {
+    setShortlistedNgoIds((prev) => {
+      const exists = prev.includes(ngoId);
+      const next = exists ? prev.filter((id) => id !== ngoId) : [...prev, ngoId];
+      localStorage.setItem("donor-shortlisted-ngos", JSON.stringify(next));
+      return next;
+    });
   };
 
   const handleOpenProofViewer = (donation: Donation) => {
@@ -751,7 +1328,24 @@ export function DonorDashboard() {
                 </div>
                 <div className="hidden md:block">
                   <div className="font-medium text-sm">{donorName}</div>
-                  <div className="text-xs text-gray-600">Donor</div>
+                  <div className="flex items-center gap-2 text-xs text-gray-600">
+                    <span>Donor</span>
+                    <Badge
+                      className={`rounded-full border-0 shadow-sm px-2 py-0.5 ${
+                        verificationStatus === "verified"
+                          ? "bg-gradient-to-r from-[#d1fae5] to-[#a7f3d0] text-[#047857]"
+                          : verificationStatus === "rejected"
+                          ? "bg-gradient-to-r from-[#fee2e2] to-[#fecaca] text-[#991b1b]"
+                          : "bg-gradient-to-r from-[#e0e7ff] to-[#dbeafe] text-[#1d4ed8]"
+                      }`}
+                    >
+                      {verificationStatus === "verified"
+                        ? "Verified Donor"
+                        : verificationStatus === "rejected"
+                        ? "Verification Rejected"
+                        : "Verification Pending"}
+                    </Badge>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1031,15 +1625,102 @@ export function DonorDashboard() {
                   </div>
                 </div>
 
+                {donorCategory === "individual" && (
+                  <div className="grid md:grid-cols-2 gap-6">
+                    <div>
+                      <Label htmlFor="houseNumber">House Number</Label>
+                      <Input
+                        id="houseNumber"
+                        placeholder="e.g., 42A"
+                        className="mt-2 rounded-2xl h-12"
+                        value={houseNumber}
+                        onChange={(event) => {
+                          const nextHouseNumber = event.target.value;
+                          setHouseNumber(nextHouseNumber);
+                          const nextAddress = composeIndividualPickupAddress(nextHouseNumber, houseName);
+                          confirmedAddressRef.current = "";
+                          setAddress(nextAddress);
+                          setPickupLatitude(null);
+                          setPickupLongitude(null);
+                          setAddressLookupMessage("");
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="houseName">House Name</Label>
+                      <Input
+                        id="houseName"
+                        placeholder="e.g., Green Villa"
+                        className="mt-2 rounded-2xl h-12"
+                        value={houseName}
+                        onChange={(event) => {
+                          const nextHouseName = event.target.value;
+                          setHouseName(nextHouseName);
+                          const nextAddress = composeIndividualPickupAddress(houseNumber, nextHouseName);
+                          confirmedAddressRef.current = "";
+                          setAddress(nextAddress);
+                          setPickupLatitude(null);
+                          setPickupLongitude(null);
+                          setAddressLookupMessage("");
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+
                 <div>
-                  <Label htmlFor="address">Pickup Address</Label>
-                  <Textarea
-                    id="address"
-                    placeholder="Enter full pickup address"
-                    className="mt-2 rounded-2xl min-h-[100px]"
-                    value={address}
-                    onChange={(e) => setAddress(e.target.value)}
-                  />
+                  <Label htmlFor="address">
+                    Pickup Address
+                    {donorCategory === "restaurant-owner" ? " (From Login)" : donorCategory === "individual" ? " (Auto-built)" : ""}
+                  </Label>
+                  <div className="relative mt-2">
+                    <Input
+                      id="address"
+                      placeholder={
+                        donorCategory === "restaurant-owner"
+                          ? "Using hotel/restaurant location from profile"
+                          : donorCategory === "individual"
+                          ? "House address will be generated from details"
+                          : "Enter full pickup address"
+                      }
+                      className="rounded-2xl h-12"
+                      value={address}
+                      readOnly={(donorCategory === "restaurant-owner" && Boolean(donorLocation.trim())) || donorCategory === "individual"}
+                      onChange={(e) => handleAddressChange(e.target.value)}
+                    />
+                    {(donorCategory !== "individual" && (donorCategory !== "restaurant-owner" || !donorLocation.trim())) && (addressSuggestions.length > 0 || isAddressSuggestionsLoading || addressLookupMessage) && (
+                      <div className="absolute z-20 mt-3 w-full overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-xl">
+                        {isAddressSuggestionsLoading && (
+                          <div className="px-4 py-3 text-sm text-gray-500">Searching addresses...</div>
+                        )}
+
+                        {!isAddressSuggestionsLoading && addressSuggestions.map((suggestion) => (
+                          <button
+                            key={suggestion.id}
+                            type="button"
+                            className="flex w-full flex-col items-start gap-1 border-b border-gray-100 px-4 py-3 text-left transition hover:bg-[#f8fafc] last:border-b-0"
+                            onClick={() => handleAddressSuggestionSelected(suggestion)}
+                          >
+                            <span className="text-sm font-medium text-gray-900">{suggestion.mainText}</span>
+                            {suggestion.secondaryText && (
+                              <span className="text-xs text-gray-500">{suggestion.secondaryText}</span>
+                            )}
+                          </button>
+                        ))}
+
+                        {!isAddressSuggestionsLoading && addressSuggestions.length === 0 && addressLookupMessage && (
+                          <div className="px-4 py-3 text-sm text-gray-500">{addressLookupMessage}</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    {donorCategory === "restaurant-owner"
+                      ? "Hotel owners use the saved hotel/restaurant location from login; coordinates are resolved automatically."
+                      : donorCategory === "individual"
+                      ? "Individuals use house number and house name; the full pickup address and coordinates are resolved automatically."
+                      : "Start typing to search RapidAPI address suggestions. Select one to store the pickup coordinates."}
+                  </p>
                 </div>
 
                 <div>
@@ -1221,6 +1902,106 @@ export function DonorDashboard() {
                 </div>
               </Card>
 
+              <div className="grid md:grid-cols-2 gap-6">
+                {isNgoLoading ? (
+                  <Card className="p-6 rounded-3xl border-0 shadow-lg md:col-span-2 text-center text-gray-500">
+                    Loading NGOs...
+                  </Card>
+                ) : filteredNgos.length > 0 ? (
+                  filteredNgos.map((ngo) => (
+                    <Card key={ngo.id} className="p-6 rounded-3xl border-0 shadow-lg">
+                      <div className="flex items-start justify-between mb-4">
+                        <div>
+                          <h3 className="text-lg font-bold">{ngo.name}</h3>
+                          <p className="text-sm text-gray-600">{ngo.email || "No email available"}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {shortlistedNgoIds.includes(ngo.id) && (
+                            <Badge className="rounded-full bg-[#fef3c7] text-[#92400e]">Shortlisted</Badge>
+                          )}
+                          <Badge className="rounded-full bg-[#d1fae5] text-[#047857]">NGO</Badge>
+                        </div>
+                      </div>
+
+                      <p className="text-sm text-gray-700 mb-4">{ngo.taskSummary}</p>
+
+                      <div className="flex flex-wrap gap-2 mb-4">
+                        {ngo.tags.length > 0 ? (
+                          ngo.tags.slice(0, 6).map((tag) => (
+                            <Badge key={tag} variant="secondary" className="rounded-full text-xs">
+                              {tag}
+                            </Badge>
+                          ))
+                        ) : (
+                          <Badge variant="secondary" className="rounded-full text-xs">general-support</Badge>
+                        )}
+                      </div>
+
+                      <div className="flex gap-3 flex-wrap">
+                        <Button
+                          variant="outline"
+                          className="rounded-full"
+                          onClick={() => {
+                            setReportTargetType("ngo");
+                            setReportEntityId(ngo.id);
+                            setReportMessage("Selected NGO in report form.");
+                          }}
+                        >
+                          Report
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="rounded-full"
+                          onClick={() => handleToggleNgoShortlist(ngo.id)}
+                        >
+                          {shortlistedNgoIds.includes(ngo.id) ? "Remove Shortlist" : "Shortlist"}
+                        </Button>
+                        {ngo.website ? (
+                          <a href={ngo.website} target="_blank" rel="noreferrer" className="flex-1">
+                            <Button variant="outline" className="w-full rounded-full">
+                              <Globe className="w-4 h-4 mr-2" />
+                              Open NGO Site
+                            </Button>
+                          </a>
+                        ) : (
+                          <Button variant="outline" className="w-full rounded-full" disabled>
+                            <Globe className="w-4 h-4 mr-2" />
+                            No Website Listed
+                          </Button>
+                        )}
+                      </div>
+                    </Card>
+                  ))
+                ) : (
+                  <Card className="p-6 rounded-3xl border-0 shadow-lg md:col-span-2 text-center text-gray-500">
+                    No NGOs found for your search. Try another task keyword.
+                  </Card>
+                )}
+              </div>
+
+              <Card className="p-6 rounded-3xl border-0 shadow-lg">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-bold">Shortlisted NGOs</h2>
+                  <Badge className="rounded-full bg-[#fef3c7] text-[#92400e]">{shortlistedNgos.length} Saved</Badge>
+                </div>
+                {shortlistedNgos.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {shortlistedNgos.map((ngo) => (
+                      <button
+                        key={ngo.id}
+                        type="button"
+                        className="px-3 py-1 rounded-full text-xs bg-[#fef3c7] text-[#92400e] hover:bg-[#fde68a]"
+                        onClick={() => setNgoSearchQuery(ngo.name)}
+                      >
+                        {ngo.name}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-500">Shortlist NGOs from results to build your preferred partner list.</div>
+                )}
+              </Card>
+
               <Card className="p-6 rounded-3xl border-0 shadow-lg">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-xl font-bold">Report NGO or Individual</h2>
@@ -1306,71 +2087,6 @@ export function DonorDashboard() {
                   <div className="mt-4 text-sm text-gray-700">{reportMessage}</div>
                 )}
               </Card>
-
-              <div className="grid md:grid-cols-2 gap-6">
-                {isNgoLoading ? (
-                  <Card className="p-6 rounded-3xl border-0 shadow-lg md:col-span-2 text-center text-gray-500">
-                    Loading NGOs...
-                  </Card>
-                ) : filteredNgos.length > 0 ? (
-                  filteredNgos.map((ngo) => (
-                    <Card key={ngo.id} className="p-6 rounded-3xl border-0 shadow-lg">
-                      <div className="flex items-start justify-between mb-4">
-                        <div>
-                          <h3 className="text-lg font-bold">{ngo.name}</h3>
-                          <p className="text-sm text-gray-600">{ngo.email || "No email available"}</p>
-                        </div>
-                        <Badge className="rounded-full bg-[#d1fae5] text-[#047857]">NGO</Badge>
-                      </div>
-
-                      <p className="text-sm text-gray-700 mb-4">{ngo.taskSummary}</p>
-
-                      <div className="flex flex-wrap gap-2 mb-4">
-                        {ngo.tags.length > 0 ? (
-                          ngo.tags.slice(0, 6).map((tag) => (
-                            <Badge key={tag} variant="secondary" className="rounded-full text-xs">
-                              {tag}
-                            </Badge>
-                          ))
-                        ) : (
-                          <Badge variant="secondary" className="rounded-full text-xs">general-support</Badge>
-                        )}
-                      </div>
-
-                      <div className="flex gap-3">
-                        <Button
-                          variant="outline"
-                          className="rounded-full"
-                          onClick={() => {
-                            setReportTargetType("ngo");
-                            setReportEntityId(ngo.id);
-                            setReportMessage("Selected NGO in report form.");
-                          }}
-                        >
-                          Report
-                        </Button>
-                        {ngo.website ? (
-                          <a href={ngo.website} target="_blank" rel="noreferrer" className="flex-1">
-                            <Button variant="outline" className="w-full rounded-full">
-                              <Globe className="w-4 h-4 mr-2" />
-                              Open NGO Site
-                            </Button>
-                          </a>
-                        ) : (
-                          <Button variant="outline" className="w-full rounded-full" disabled>
-                            <Globe className="w-4 h-4 mr-2" />
-                            No Website Listed
-                          </Button>
-                        )}
-                      </div>
-                    </Card>
-                  ))
-                ) : (
-                  <Card className="p-6 rounded-3xl border-0 shadow-lg md:col-span-2 text-center text-gray-500">
-                    No NGOs found for your search. Try another task keyword.
-                  </Card>
-                )}
-              </div>
             </div>
           )}
 
@@ -1454,6 +2170,55 @@ export function DonorDashboard() {
                 >
                   Reset Password
                 </Button>
+              </Card>
+
+              <Card className="p-6 rounded-3xl border-0 shadow-lg">
+                <h2 className="text-xl font-bold mb-2">Aadhaar Verification</h2>
+                <p className="text-gray-600 mb-4">Re-verify donor Aadhaar through DigiLocker for existing accounts.</p>
+
+                <div className="grid md:grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <Label htmlFor="donorVerificationGovId">Aadhaar / Government ID</Label>
+                    <Input
+                      id="donorVerificationGovId"
+                      className="mt-2 rounded-2xl"
+                      placeholder="Enter Aadhaar / Govt ID"
+                      value={donorGovernmentId}
+                      onChange={(event) => {
+                        setDonorGovernmentId(event.target.value);
+                        setDonorDigiLockerVerified(false);
+                      }}
+                    />
+                  </div>
+
+                  <div className="p-4 rounded-2xl border border-gray-200 bg-gray-50">
+                    <div className="font-semibold mb-1">Current Status</div>
+                    <div className="text-sm text-gray-600">
+                      {donorDigiLockerVerified ? "DigiLocker Verified" : "Not Verified"}
+                    </div>
+                    <div className="font-semibold mt-3 mb-1">Last Verified</div>
+                    <div
+                      className="text-sm text-gray-600"
+                      title={donorVerifiedAt ? formatExactDateTime(donorVerifiedAt) : undefined}
+                    >
+                      {donorVerifiedAt ? formatRelativeTime(donorVerifiedAt) : "Never"}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    type="button"
+                    className="rounded-full bg-[#3b82f6] hover:bg-[#1d4ed8]"
+                    onClick={handleVerifyDonorIdentity}
+                    disabled={donorVerificationLoading}
+                  >
+                    {donorVerificationLoading ? "Verifying..." : donorDigiLockerVerified ? "Re-verify DigiLocker" : "Verify via DigiLocker"}
+                  </Button>
+                  {donorDigiLockerVerified && (
+                    <Badge className="rounded-full bg-[#dbeafe] text-[#1d4ed8]">Verified</Badge>
+                  )}
+                </div>
               </Card>
 
               <Card className="p-6 rounded-3xl border-0 shadow-lg">

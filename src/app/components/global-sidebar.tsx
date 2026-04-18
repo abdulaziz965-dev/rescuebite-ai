@@ -78,6 +78,9 @@ export function GlobalSidebar({
   const handleSignOut = async () => {
     try {
       await signOut(auth);
+      if (typeof window !== "undefined") {
+        window.sessionStorage.removeItem("admin-access-granted");
+      }
       navigate("/login");
     } catch {
       console.error("Sign out failed");

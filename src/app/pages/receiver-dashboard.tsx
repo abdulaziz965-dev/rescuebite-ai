@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
@@ -25,6 +25,7 @@ import {
   CheckCircle2,
   Settings,
   BarChart3,
+  Navigation,
   Menu,
   X
 } from "lucide-react";
@@ -33,6 +34,7 @@ import { collection, doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc
 import { onAuthStateChanged, sendPasswordResetEmail, updateProfile } from "firebase/auth";
 import { auth, db } from "../../firebase/config";
 import { sendNotification } from "../lib/notifications";
+import { verifyIndianGovernmentIdentity, verifyIndianNgoDocuments } from "../lib/india-verification";
 
 type Donation = {
   id: string;
@@ -50,14 +52,28 @@ type Donation = {
   donorEmail?: string;
   claimedByUid?: string;
   claimedProofImages?: string[];
+  pickupLatitude?: number;
+  pickupLongitude?: number;
 };
 
 type ReceiverMode = "individual" | "ngo";
 type ReceiverIndividualMode = "new" | "experienced";
+type ReceiverTab = "available" | "history" | "map" | "proof" | "settings";
+type VerificationStatus = "pending" | "verified" | "rejected";
+
+const receiverTabs: ReceiverTab[] = ["available", "history", "map", "proof", "settings"];
+const isReceiverTab = (value: string): value is ReceiverTab => receiverTabs.includes(value as ReceiverTab);
+const normalizeVerificationStatus = (value: unknown): VerificationStatus => {
+  if (value === "verified" || value === "rejected") {
+    return value;
+  }
+  return "pending";
+};
 
 export function ReceiverDashboard() {
+  const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<"available" | "history" | "map" | "proof" | "settings">("available");
+  const [activeTab, setActiveTab] = useState<ReceiverTab>("available");
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<string | null>(null);
   const [showFilterPanel, setShowFilterPanel] = useState(false);
@@ -80,6 +96,7 @@ export function ReceiverDashboard() {
   const [receiverGovernmentId, setReceiverGovernmentId] = useState("");
   const [receiverIdProofImage, setReceiverIdProofImage] = useState("");
   const [receiverDigiLockerVerified, setReceiverDigiLockerVerified] = useState(false);
+  const [ngoDocumentImage, setNgoDocumentImage] = useState("");
   const [ngoLinkedToApp, setNgoLinkedToApp] = useState(false);
   const [ngoLinkReference, setNgoLinkReference] = useState("");
   const [verificationMessage, setVerificationMessage] = useState("");
@@ -90,6 +107,25 @@ export function ReceiverDashboard() {
   const [isClaimSubmitLoading, setIsClaimSubmitLoading] = useState(false);
   const [claimFlowMessage, setClaimFlowMessage] = useState("");
   const [currentUserUid, setCurrentUserUid] = useState<string | null>(auth.currentUser?.uid || null);
+  const [verificationStatus, setVerificationStatus] = useState<VerificationStatus>("pending");
+
+  useEffect(() => {
+    const query = new URLSearchParams(location.search);
+    const tab = query.get("tab");
+    const requestedVerification = query.get("verification") === "1";
+
+    if (requestedVerification || tab === "settings") {
+      setActiveTab("settings");
+      if (requestedVerification) {
+        setVerificationMessage("Please complete your receiver verification first.");
+      }
+      return;
+    }
+
+    if (tab && isReceiverTab(tab)) {
+      setActiveTab(tab);
+    }
+  }, [location.search]);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(
@@ -164,8 +200,15 @@ export function ReceiverDashboard() {
         const governmentIdValue = typeof data.receiverGovernmentId === "string" ? data.receiverGovernmentId.trim() : "";
         const idProofValue = typeof data.receiverIdProofImage === "string" ? data.receiverIdProofImage.trim() : "";
         const digiLockerValue = Boolean(data.receiverDigiLockerVerified);
-        const ngoLinkedValue = Boolean(data.ngoLinkedToApp);
-        const ngoReferenceValue = typeof data.ngoLinkReference === "string" ? data.ngoLinkReference.trim() : "";
+        const ngoDocumentValue = typeof data.ngoDocumentImage === "string" ? data.ngoDocumentImage.trim() : "";
+        const ngoLinkedValue = Boolean(data.ngoDocumentVerified ?? data.ngoLinkedToApp);
+        const ngoReferenceValue =
+          typeof data.ngoDocumentVerificationRef === "string"
+            ? data.ngoDocumentVerificationRef.trim()
+            : typeof data.ngoLinkReference === "string"
+              ? data.ngoLinkReference.trim()
+              : "";
+        const verificationFromDb = data.verificationStatus;
 
         if (typeof fullName === "string" && fullName.trim()) {
           setReceiverName(fullName.trim());
@@ -190,8 +233,10 @@ export function ReceiverDashboard() {
         setReceiverGovernmentId(governmentIdValue);
         setReceiverIdProofImage(idProofValue);
         setReceiverDigiLockerVerified(digiLockerValue);
+        setNgoDocumentImage(ngoDocumentValue);
         setNgoLinkedToApp(ngoLinkedValue);
         setNgoLinkReference(ngoReferenceValue);
+        setVerificationStatus(normalizeVerificationStatus(verificationFromDb));
       } catch {
         // Keep fallback values.
       }
@@ -298,6 +343,21 @@ export function ReceiverDashboard() {
   }, [userClaimedDonations]);
   const activeClaims = useMemo(() => donations.filter((donation) => !donation.claimed).length, [donations]);
   const peopleFed = useMemo(() => Math.max(1, Math.round(mealsReceived / 3)), [mealsReceived]);
+
+  const handleOpenGoogleMaps = (donation: Donation) => {
+    if (typeof donation.pickupLatitude === "number" && typeof donation.pickupLongitude === "number") {
+      window.open(
+        `https://www.google.com/maps/search/?api=1&query=${donation.pickupLatitude},${donation.pickupLongitude}`,
+        "_blank",
+        "noopener,noreferrer"
+      );
+      return;
+    }
+
+    const query = encodeURIComponent(donation.address || "Donation location");
+    window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, "_blank", "noopener,noreferrer");
+  };
+
   const donationsByType = useMemo(() => {
     const counts = { veg: 0, nonVeg: 0, vegan: 0 };
     donations.forEach((donation) => {
@@ -535,6 +595,7 @@ export function ReceiverDashboard() {
         {
           photoURL: nextPhotoUrl,
           phoneNumber: nextPhone,
+          verificationStatus,
           updatedAt: serverTimestamp(),
         },
         { merge: true }
@@ -596,38 +657,91 @@ export function ReceiverDashboard() {
   const handleLinkNgoToApp = async () => {
     const user = auth.currentUser;
     if (!user) {
-      setVerificationMessage("Please sign in again to verify NGO link.");
+      setVerificationMessage("Please sign in again to verify NGO documents.");
       return;
     }
 
     if (!ngoName.trim() || !ngoWebsite.trim()) {
-      setVerificationMessage("Add NGO name and NGO website before linking to the app.");
+      setVerificationMessage("Add NGO name and NGO website before NGO document verification.");
+      return;
+    }
+
+    if (!ngoDocumentImage) {
+      setVerificationMessage("Upload NGO registration document before verification.");
       return;
     }
 
     setVerificationSaving(true);
     setVerificationMessage("");
     try {
-      const reference = `NGO-${Date.now()}`;
+      const ngoVerificationResult = await verifyIndianNgoDocuments({
+        ngoName: ngoName.trim(),
+        ngoWebsite: ngoWebsite.trim(),
+        documentImage: ngoDocumentImage,
+        contactName: receiverName,
+      });
+
+      const nextVerificationStatus: VerificationStatus =
+        ngoVerificationResult.status === "verified"
+          ? "verified"
+          : ngoVerificationResult.status === "rejected"
+            ? "rejected"
+            : "pending";
+
+      const reference = ngoVerificationResult.providerReferenceId || `NGO-${Date.now()}`;
       await setDoc(
         doc(db, "users", user.uid),
         {
-          ngoLinkedToApp: true,
+          ngoLinkedToApp: ngoVerificationResult.isVerified,
+          ngoDocumentImage,
+          ngoDocumentVerified: ngoVerificationResult.isVerified,
+          ngoDocumentVerificationProvider: ngoVerificationResult.provider || "ngo-docs",
+          ngoDocumentVerificationRef: reference,
+          ngoDocumentVerificationReason: ngoVerificationResult.reason || null,
+          ngoDocumentVerificationRaw: ngoVerificationResult.raw || null,
           ngoLinkReference: reference,
+          verificationStatus: nextVerificationStatus,
           ngoLinkedAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         },
         { merge: true }
       );
 
-      setNgoLinkedToApp(true);
+      setNgoLinkedToApp(ngoVerificationResult.isVerified);
       setNgoLinkReference(reference);
-      setVerificationMessage("NGO linked and verified successfully for this app.");
+      setVerificationStatus(nextVerificationStatus);
+      setVerificationMessage(
+        ngoVerificationResult.isVerified
+          ? "NGO documents verified successfully."
+          : ngoVerificationResult.reason || "NGO documents submitted. Status is pending review."
+      );
     } catch {
-      setVerificationMessage("Unable to verify NGO link right now. Please try again.");
+      setVerificationMessage("Unable to verify NGO documents right now. Please try again.");
     } finally {
       setVerificationSaving(false);
     }
+  };
+
+  const handleNgoDocumentSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    const encodedImage = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+      reader.onerror = () => reject(new Error("ngo-document-read-failed"));
+      reader.readAsDataURL(file);
+    });
+
+    if (encodedImage.startsWith("data:image/")) {
+      setNgoDocumentImage(encodedImage);
+      setNgoLinkedToApp(false);
+      setVerificationMessage("NGO document uploaded. Please verify NGO documents.");
+    }
+
+    event.target.value = "";
   };
 
   const handleVerifyDigiLockerIdentity = async () => {
@@ -650,21 +764,46 @@ export function ReceiverDashboard() {
     setVerificationSaving(true);
     setVerificationMessage("");
     try {
+      const verificationApiResult = await verifyIndianGovernmentIdentity({
+        governmentId: receiverGovernmentId.trim(),
+        fullName: receiverName,
+        ngoName,
+        ngoWebsite,
+      });
+
+      const nextVerificationStatus: VerificationStatus =
+        verificationApiResult.status === "verified"
+          ? "verified"
+          : verificationApiResult.status === "rejected"
+            ? "rejected"
+            : "pending";
+
       await setDoc(
         doc(db, "users", user.uid),
         {
           receiverGovernmentId: receiverGovernmentId.trim(),
           receiverIdProofImage,
-          receiverDigiLockerVerified: true,
-          receiverVerificationProvider: "digilocker",
+          receiverDigiLockerVerified: verificationApiResult.isVerified,
+          verificationStatus: nextVerificationStatus,
+          receiverVerificationProvider: verificationApiResult.provider || "digilocker",
+          receiverVerificationProviderRef: verificationApiResult.providerReferenceId || null,
+          receiverVerificationReason: verificationApiResult.reason || null,
+          receiverVerificationRaw: verificationApiResult.raw || null,
           receiverVerifiedAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         },
         { merge: true }
       );
 
-      setReceiverDigiLockerVerified(true);
-      setVerificationMessage("Identity verified through DigiLocker successfully.");
+      setReceiverDigiLockerVerified(verificationApiResult.isVerified);
+      setVerificationStatus(nextVerificationStatus);
+      if (verificationApiResult.isVerified) {
+        setVerificationMessage("Identity verified through DigiLocker successfully.");
+      } else {
+        setVerificationMessage(
+          verificationApiResult.reason || "Verification API submitted. Status is pending admin review."
+        );
+      }
     } catch {
       setVerificationMessage("Could not verify through DigiLocker right now. Please try again.");
     } finally {
@@ -672,9 +811,13 @@ export function ReceiverDashboard() {
     }
   };
 
+  const handleSidebarTabChange = (tab: string) => {
+    setActiveTab(isReceiverTab(tab) ? tab : "available");
+  };
+
   return (
     <>
-      <GlobalSidebar role="receiver" activeTab={activeTab} onTabChange={(tab: string) => setActiveTab(tab as any)} />
+      <GlobalSidebar role="receiver" activeTab={activeTab} onTabChange={handleSidebarTabChange} />
       <DashboardLayout>
         {/* Top Bar */}
         <header className={`border-b px-4 md:px-6 lg:px-8 py-2 md:py-4 ${themeMode === "dark" ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200"}`}>
@@ -691,7 +834,26 @@ export function ReceiverDashboard() {
                 </div>
                 <div className="hidden md:block">
                   <div className="font-medium text-sm">{receiverName}</div>
-                  <div className="text-xs text-gray-600">{receiverType === "ngo" ? "NGO Receiver" : "Receiver"}</div>
+                  <div className="flex items-center gap-2 text-xs text-gray-600">
+                    <span>{receiverType === "ngo" ? "NGO Receiver" : "Receiver"}</span>
+                    {receiverType === "ngo" && (
+                      <Badge
+                        className={`rounded-full border-0 shadow-sm px-2 py-0.5 ${
+                          verificationStatus === "verified"
+                            ? "bg-gradient-to-r from-[#d1fae5] to-[#a7f3d0] text-[#047857]"
+                            : verificationStatus === "rejected"
+                            ? "bg-gradient-to-r from-[#fee2e2] to-[#fecaca] text-[#991b1b]"
+                            : "bg-gradient-to-r from-[#e0e7ff] to-[#dbeafe] text-[#1d4ed8]"
+                        }`}
+                      >
+                        {verificationStatus === "verified"
+                          ? "Verified NGO"
+                          : verificationStatus === "rejected"
+                          ? "Verification Rejected"
+                          : "Verification Pending"}
+                      </Badge>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -850,6 +1012,15 @@ export function ReceiverDashboard() {
                           >
                             {claimingId === donation.id ? "Claiming..." : donation.claimed ? "Claimed" : "Claim Food"}
                           </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="w-full mt-3 rounded-full"
+                            onClick={() => handleOpenGoogleMaps(donation)}
+                          >
+                            <Navigation className="w-4 h-4 mr-2" />
+                            Navigate
+                          </Button>
                         </div>
                       </Card>
                     ))
@@ -990,6 +1161,16 @@ export function ReceiverDashboard() {
                       <div className={`w-4 h-4 rounded-full shadow-lg ${donation.urgency === "urgent" || donation.urgency === "high" ? "bg-[#f97316]" : "bg-[#10b981]"}`}></div>
                       <div className="mt-2 px-3 py-1 rounded-full bg-white shadow-sm text-xs max-w-[120px] truncate">{donation.foodName}</div>
                       <div className="text-[10px] text-gray-500 mt-1">Pin {index + 1}</div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="mt-2 rounded-full h-8 px-3"
+                          onClick={() => handleOpenGoogleMaps(donation)}
+                        >
+                          <Navigation className="w-3 h-3 mr-1" />
+                          Navigate
+                        </Button>
                     </div>
                   ))}
                   <div className="absolute bottom-4 left-4 right-4 grid grid-cols-2 gap-3">
@@ -1204,9 +1385,27 @@ export function ReceiverDashboard() {
                 {receiverType === "ngo" && (
                   <div className="mt-5 rounded-2xl border border-[#bbf7d0] bg-[#f0fdf4] p-4 space-y-4">
                     <div>
-                      <h3 className="font-semibold text-[#166534]">NGO Verification</h3>
-                      <p className="text-sm text-[#166534] mt-1">Link this NGO profile to RescueBite app for verification and trust status.</p>
+                      <h3 className="font-semibold text-[#166534]">NGO Document Verification</h3>
+                      <p className="text-sm text-[#166534] mt-1">Upload NGO documents and verify them before account trust activation.</p>
                     </div>
+
+                    <div>
+                      <Label htmlFor="ngoDocumentProof">NGO Document Upload</Label>
+                      <Input
+                        id="ngoDocumentProof"
+                        type="file"
+                        accept="image/*"
+                        className="mt-2 rounded-2xl"
+                        onChange={handleNgoDocumentSelected}
+                      />
+                    </div>
+
+                    {ngoDocumentImage && (
+                      <div className="rounded-2xl overflow-hidden border border-gray-200 max-w-xs">
+                        <img src={ngoDocumentImage} alt="NGO document preview" className="w-full h-40 object-cover" />
+                      </div>
+                    )}
+
                     <div className="flex flex-wrap items-center gap-3">
                       <Button
                         type="button"
@@ -1214,10 +1413,10 @@ export function ReceiverDashboard() {
                         onClick={handleLinkNgoToApp}
                         disabled={verificationSaving}
                       >
-                        {verificationSaving ? "Verifying..." : ngoLinkedToApp ? "Re-verify NGO Link" : "Link NGO to App"}
+                        {verificationSaving ? "Verifying..." : ngoLinkedToApp ? "Re-verify NGO Documents" : "Verify NGO Documents"}
                       </Button>
                       {ngoLinkedToApp && (
-                        <Badge className="rounded-full bg-[#d1fae5] text-[#047857]">Verified</Badge>
+                        <Badge className="rounded-full bg-[#d1fae5] text-[#047857]">Documents Verified</Badge>
                       )}
                     </div>
                     {ngoLinkReference && (

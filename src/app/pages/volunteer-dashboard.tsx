@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
@@ -28,10 +28,12 @@ import {
   Menu,
   X
 } from "lucide-react";
-import { collection, doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
+import { addDoc, collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
 import { sendPasswordResetEmail, updateProfile } from "firebase/auth";
 import { auth, db } from "../../firebase/config";
 import { sendNotification } from "../lib/notifications";
+import { verifyIndianGovernmentIdentity } from "../lib/india-verification";
+import { buildImpactLedgerPayload, createImpactLedgerHash } from "../lib/impact-ledger";
 
 type TaskStatus = "pending" | "active" | "completed";
 
@@ -40,12 +42,15 @@ type PickupTask = {
   foodName: string;
   quantity: string;
   pickupAddress: string;
+  pickupLatitude?: number;
+  pickupLongitude?: number;
   deliveryAddress: string;
   distance: string;
   estimatedTime: string;
   urgency: "high" | "medium" | "low";
   donorPhone: string;
   donorUid?: string;
+  claimedByUid?: string;
   receiverPhone: string;
   status: TaskStatus;
   acceptedAt?: { toDate?: () => Date };
@@ -55,6 +60,7 @@ type PickupTask = {
 
 export function VolunteerDashboard() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"available" | "active" | "completed" | "profile">("available");
   const [tasks, setTasks] = useState<PickupTask[]>([]);
@@ -72,11 +78,30 @@ export function VolunteerDashboard() {
   const [verificationDigiLockerVerified, setVerificationDigiLockerVerified] = useState(false);
   const [verificationNgoLinked, setVerificationNgoLinked] = useState(false);
   const [verificationNgoReference, setVerificationNgoReference] = useState("");
+  const [verificationActionLoading, setVerificationActionLoading] = useState(false);
   const [completionTask, setCompletionTask] = useState<PickupTask | null>(null);
   const [completionProofDescription, setCompletionProofDescription] = useState("");
   const [completionProofImages, setCompletionProofImages] = useState<string[]>([]);
   const [completionSubmitting, setCompletionSubmitting] = useState(false);
   const [completionMessage, setCompletionMessage] = useState("");
+
+  useEffect(() => {
+    const query = new URLSearchParams(location.search);
+    const tab = query.get("tab");
+    const requestedVerification = query.get("verification") === "1";
+
+    if (requestedVerification || tab === "profile") {
+      setActiveTab("profile");
+      if (requestedVerification) {
+        setSettingsMessage("Please complete your volunteer verification first.");
+      }
+      return;
+    }
+
+    if (tab === "available" || tab === "active" || tab === "completed" || tab === "profile") {
+      setActiveTab(tab);
+    }
+  }, [location.search]);
 
   useEffect(() => {
     const savedTheme = localStorage.getItem("volunteer-theme");
@@ -113,12 +138,15 @@ export function VolunteerDashboard() {
               foodName: data.foodName || "Donation",
               quantity: data.quantity || "-",
               pickupAddress: data.address || "Pickup address not provided",
+              pickupLatitude: data.pickupLatitude,
+              pickupLongitude: data.pickupLongitude,
               deliveryAddress: data.receiverAddress || data.claimedBy || "Receiver location",
               distance: data.routeDistance || "N/A",
               estimatedTime: data.estimatedTime || "N/A",
               urgency: (data.urgency as "high" | "medium" | "low") || "medium",
               donorPhone: data.donorPhone || "Not shared",
               donorUid: data.donorUid,
+              claimedByUid: data.claimedByUid,
               receiverPhone: data.receiverPhone || "Not shared",
               status,
               acceptedAt: data.volunteerAcceptedAt,
@@ -409,6 +437,52 @@ export function VolunteerDashboard() {
         updatedAt: serverTimestamp(),
       });
 
+      const latestReceiptSnapshot = await getDocs(
+        query(collection(db, "impactLedger"), orderBy("sequence", "desc"), limit(1))
+      );
+      const latestReceipt = latestReceiptSnapshot.docs[0]?.data() as { sequence?: number; hash?: string } | undefined;
+      const previousHash = typeof latestReceipt?.hash === "string" ? latestReceipt.hash : "GENESIS";
+      const sequence = typeof latestReceipt?.sequence === "number" ? latestReceipt.sequence + 1 : 1;
+
+      const impactPayload = buildImpactLedgerPayload({
+        donationId: completionTask.id,
+        foodName: completionTask.foodName || "Donation",
+        quantityRaw: completionTask.quantity || "1",
+        donorUid: completionTask.donorUid,
+        receiverUid: completionTask.claimedByUid,
+        volunteerUid: auth.currentUser?.uid || undefined,
+        volunteerName,
+        pickupAddress: completionTask.pickupAddress,
+        deliveryAddress: completionTask.deliveryAddress,
+        proofDescription: completionProofDescription,
+        proofImageCount: completionProofImages.length,
+        deliveredAtIso: new Date().toISOString(),
+      });
+
+      const receiptHash = await createImpactLedgerHash({
+        payload: impactPayload,
+        previousHash,
+        sequence,
+      });
+
+      const receiptId = `IR-${sequence}-${receiptHash.slice(0, 12).toUpperCase()}`;
+      await addDoc(collection(db, "impactLedger"), {
+        receiptId,
+        donationId: completionTask.id,
+        sequence,
+        previousHash,
+        hash: receiptHash,
+        payload: impactPayload,
+        createdAt: serverTimestamp(),
+      });
+
+      await updateDoc(doc(db, "donations", completionTask.id), {
+        impactReceiptId: receiptId,
+        impactReceiptHash: receiptHash,
+        impactReceiptSequence: sequence,
+        updatedAt: serverTimestamp(),
+      });
+
       await Promise.all([
         completionTask.donorUid
           ? sendNotification({
@@ -446,9 +520,14 @@ export function VolunteerDashboard() {
   };
 
   const handleOpenGoogleMaps = (task: PickupTask) => {
-    const origin = encodeURIComponent(task.pickupAddress || "Pickup location");
-    const destination = encodeURIComponent(task.deliveryAddress || "Delivery location");
-    const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
+    if (typeof task.pickupLatitude === "number" && typeof task.pickupLongitude === "number") {
+      const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${task.pickupLatitude},${task.pickupLongitude}`;
+      window.open(mapsUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+
+    const destination = encodeURIComponent(task.pickupAddress || "Pickup location");
+    const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${destination}`;
     window.open(mapsUrl, "_blank", "noopener,noreferrer");
   };
 
@@ -511,6 +590,58 @@ export function VolunteerDashboard() {
       setSettingsMessage("Unable to send reset link right now. Please try again.");
     } finally {
       setSettingsSaving(false);
+    }
+  };
+
+  const handleVerifyVolunteerIdentity = async () => {
+    const user = auth.currentUser;
+    if (!user) {
+      setSettingsMessage("Please sign in again to verify Aadhaar.");
+      return;
+    }
+
+    if (!verificationGovernmentId.trim()) {
+      setSettingsMessage("Please enter Aadhaar/government ID before verification.");
+      return;
+    }
+
+    setVerificationActionLoading(true);
+    setSettingsMessage("");
+    try {
+      const verificationResult = await verifyIndianGovernmentIdentity({
+        governmentId: verificationGovernmentId.trim(),
+        fullName: volunteerName,
+        ngoName: "",
+        ngoWebsite: "",
+      });
+
+      await setDoc(
+        doc(db, "users", user.uid),
+        {
+          volunteerGovernmentId: verificationGovernmentId.trim(),
+          volunteerDigiLockerVerified: verificationResult.isVerified,
+          volunteerVerificationProvider: verificationResult.provider || "digilocker",
+          volunteerVerificationProviderRef: verificationResult.providerReferenceId || null,
+          volunteerVerificationReason: verificationResult.reason || null,
+          volunteerVerificationRaw: verificationResult.raw || null,
+          verificationStatus: verificationResult.isVerified ? "verified" : "pending",
+          volunteerVerifiedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      setVerificationProvider(verificationResult.provider || "digilocker");
+      setVerificationDigiLockerVerified(verificationResult.isVerified);
+      setSettingsMessage(
+        verificationResult.isVerified
+          ? "Volunteer Aadhaar verified through DigiLocker."
+          : verificationResult.reason || "Verification submitted. Current status is pending review."
+      );
+    } catch {
+      setSettingsMessage("Could not verify volunteer Aadhaar right now. Please try again.");
+    } finally {
+      setVerificationActionLoading(false);
     }
   };
 
@@ -1046,6 +1177,35 @@ export function VolunteerDashboard() {
 
               <Card className="p-6 rounded-3xl border-0 shadow-lg">
                 <h2 className="text-xl font-bold mb-5">Verification Details</h2>
+                <div className="rounded-2xl border border-[#dbeafe] bg-[#eff6ff] p-4 mb-4 space-y-3">
+                  <div>
+                    <Label htmlFor="volunteerVerificationGovId">Aadhaar / Government ID</Label>
+                    <Input
+                      id="volunteerVerificationGovId"
+                      className="mt-2 rounded-2xl"
+                      placeholder="Enter Aadhaar / Govt ID"
+                      value={verificationGovernmentId}
+                      onChange={(event) => {
+                        setVerificationGovernmentId(event.target.value);
+                        setVerificationDigiLockerVerified(false);
+                      }}
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Button
+                      type="button"
+                      className="rounded-full bg-[#3b82f6] hover:bg-[#1d4ed8]"
+                      onClick={handleVerifyVolunteerIdentity}
+                      disabled={verificationActionLoading}
+                    >
+                      {verificationActionLoading ? "Verifying..." : verificationDigiLockerVerified ? "Re-verify DigiLocker" : "Verify via DigiLocker"}
+                    </Button>
+                    {verificationDigiLockerVerified && (
+                      <Badge className="rounded-full bg-[#dbeafe] text-[#1d4ed8]">Verified</Badge>
+                    )}
+                  </div>
+                </div>
+
                 <div className="grid md:grid-cols-2 gap-4">
                   <div className="p-4 rounded-2xl border border-gray-200 bg-gray-50">
                     <div className="font-semibold mb-1">Government ID Used</div>
