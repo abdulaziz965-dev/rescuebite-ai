@@ -30,10 +30,85 @@ import {
 } from "lucide-react";
 import { addDoc, collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
 import { sendPasswordResetEmail, updateProfile } from "firebase/auth";
+import { FirebaseError } from "firebase/app";
 import { auth, db } from "../../firebase/config";
 import { sendNotification } from "../lib/notifications";
 import { verifyIndianGovernmentIdentity } from "../lib/india-verification";
 import { buildImpactLedgerPayload, createImpactLedgerHash } from "../lib/impact-ledger";
+
+const MAX_COMPLETION_PROOF_IMAGES = 6;
+const MAX_PROOF_IMAGE_DIMENSION = 1280;
+const TARGET_PROOF_IMAGE_BYTES = 220 * 1024;
+const MAX_TOTAL_PROOF_IMAGE_BYTES = 850 * 1024;
+
+const readBlobAsDataUrl = (blob: Blob): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error("delivery-proof-read-failed"));
+    };
+    reader.onerror = () => reject(new Error("delivery-proof-read-failed"));
+    reader.readAsDataURL(blob);
+  });
+
+const loadImageElement = (url: string): Promise<HTMLImageElement> =>
+  new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("delivery-proof-image-load-failed"));
+    image.src = url;
+  });
+
+const canvasToBlob = (canvas: HTMLCanvasElement, quality: number): Promise<Blob> =>
+  new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob) {
+          resolve(blob);
+          return;
+        }
+        reject(new Error("delivery-proof-encode-failed"));
+      },
+      "image/jpeg",
+      quality
+    );
+  });
+
+const optimizeProofImage = async (file: File): Promise<string> => {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const image = await loadImageElement(objectUrl);
+    const largestSide = Math.max(image.width, image.height);
+    const scale = largestSide > MAX_PROOF_IMAGE_DIMENSION ? MAX_PROOF_IMAGE_DIMENSION / largestSide : 1;
+    const targetWidth = Math.max(1, Math.round(image.width * scale));
+    const targetHeight = Math.max(1, Math.round(image.height * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+    const context = canvas.getContext("2d");
+    if (!context) {
+      throw new Error("delivery-proof-canvas-unavailable");
+    }
+
+    context.drawImage(image, 0, 0, targetWidth, targetHeight);
+
+    let encodedBlob = await canvasToBlob(canvas, 0.82);
+    let quality = 0.82;
+    while (encodedBlob.size > TARGET_PROOF_IMAGE_BYTES && quality > 0.45) {
+      quality = Math.max(0.45, quality - 0.1);
+      encodedBlob = await canvasToBlob(canvas, quality);
+    }
+
+    return await readBlobAsDataUrl(encodedBlob);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+};
 
 type TaskStatus = "pending" | "active" | "completed";
 
@@ -84,6 +159,7 @@ export function VolunteerDashboard() {
   const [completionProofImages, setCompletionProofImages] = useState<string[]>([]);
   const [completionSubmitting, setCompletionSubmitting] = useState(false);
   const [completionMessage, setCompletionMessage] = useState("");
+  const [taskActionMessage, setTaskActionMessage] = useState("");
 
   useEffect(() => {
     const query = new URLSearchParams(location.search);
@@ -122,16 +198,18 @@ export function VolunteerDashboard() {
         const allTasks = snapshot.docs
           .map((docSnapshot) => {
             const data = docSnapshot.data() as any;
-            if (!data.claimed) {
+            const status =
+              data.volunteerStatus === "active" || data.volunteerStatus === "completed"
+                ? (data.volunteerStatus as TaskStatus)
+                : "pending";
+
+            const currentUid = auth.currentUser?.uid;
+            const isAssignedToAnotherVolunteer =
+              status !== "pending" && Boolean(data.volunteerUid) && data.volunteerUid !== currentUid;
+            if (isAssignedToAnotherVolunteer) {
               return null;
             }
 
-            const isMine = data.volunteerUid ? data.volunteerUid === auth.currentUser?.uid : true;
-            if (!isMine) {
-              return null;
-            }
-
-            const status = (data.volunteerStatus as TaskStatus | undefined) || "pending";
             return {
               id: docSnapshot.id,
               donationId: docSnapshot.id,
@@ -140,7 +218,11 @@ export function VolunteerDashboard() {
               pickupAddress: data.address || "Pickup address not provided",
               pickupLatitude: data.pickupLatitude,
               pickupLongitude: data.pickupLongitude,
-              deliveryAddress: data.receiverAddress || data.claimedBy || "Receiver location",
+              deliveryAddress:
+                data.receiverAddress ||
+                data.claimedByName ||
+                data.claimedBy ||
+                "Receiver location will appear once claimed",
               distance: data.routeDistance || "N/A",
               estimatedTime: data.estimatedTime || "N/A",
               urgency: (data.urgency as "high" | "medium" | "low") || "medium",
@@ -327,6 +409,8 @@ export function VolunteerDashboard() {
     return `${Math.round(parsedDynamic)} km`;
   }, [completedTasks]);
   const volunteerRating = useMemo(() => (totalDeliveries > 0 ? 4.9 : 0), [totalDeliveries]);
+  const canAcceptTasks = verificationDigiLockerVerified;
+  const taskAcceptanceMessage = "DigiLocker verification is required before accepting tasks.";
 
   const achievements = useMemo(() => {
     return [
@@ -347,6 +431,12 @@ export function VolunteerDashboard() {
     if (!user) {
       return;
     }
+
+    if (!canAcceptTasks) {
+      setTaskActionMessage(taskAcceptanceMessage);
+      return;
+    }
+
     const selectedTask = tasks.find((task) => task.id === taskId);
     await updateDoc(doc(db, "donations", taskId), {
       volunteerStatus: "active",
@@ -355,6 +445,7 @@ export function VolunteerDashboard() {
       volunteerAcceptedAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
+    setTaskActionMessage("");
 
     if (selectedTask) {
       await Promise.all([
@@ -390,22 +481,28 @@ export function VolunteerDashboard() {
       return;
     }
 
-    const selectedFiles = Array.from(files).slice(0, 6);
-    const encodedImages = await Promise.all(
-      selectedFiles.map(
-        (file) =>
-          new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
-            reader.onerror = () => reject(new Error("delivery-proof-read-failed"));
-            reader.readAsDataURL(file);
-          })
-      )
-    );
+    try {
+      const remainingSlots = Math.max(0, MAX_COMPLETION_PROOF_IMAGES - completionProofImages.length);
+      if (remainingSlots === 0) {
+        setCompletionMessage("You can upload up to 6 proof images.");
+        event.target.value = "";
+        return;
+      }
 
-    const validImages = encodedImages.filter((item) => item.startsWith("data:image/"));
-    setCompletionProofImages((prev) => [...prev, ...validImages].slice(0, 6));
-    event.target.value = "";
+      const selectedFiles = Array.from(files)
+        .filter((file) => file.type.startsWith("image/"))
+        .slice(0, remainingSlots);
+
+      const optimizedImages = await Promise.all(selectedFiles.map((file) => optimizeProofImage(file)));
+      const validImages = optimizedImages.filter((item) => item.startsWith("data:image/"));
+
+      setCompletionProofImages((prev) => [...prev, ...validImages]);
+      setCompletionMessage(validImages.length > 0 ? "" : "Please choose valid image files.");
+    } catch {
+      setCompletionMessage("One or more images could not be processed. Try smaller photos.");
+    } finally {
+      event.target.value = "";
+    }
   };
 
   const handleCompleteTask = async () => {
@@ -421,6 +518,15 @@ export function VolunteerDashboard() {
 
     if (completionProofImages.length === 0) {
       setCompletionMessage("Please upload at least one delivery proof image.");
+      return;
+    }
+
+    const totalProofImageBytes = completionProofImages.reduce(
+      (sum, image) => sum + new TextEncoder().encode(image).length,
+      0
+    );
+    if (totalProofImageBytes > MAX_TOTAL_PROOF_IMAGE_BYTES) {
+      setCompletionMessage("Proof photos are too large. Remove some images and try again.");
       return;
     }
 
@@ -512,7 +618,18 @@ export function VolunteerDashboard() {
       setCompletionTask(null);
       setCompletionProofDescription("");
       setCompletionProofImages([]);
-    } catch {
+    } catch (error) {
+      if (error instanceof FirebaseError) {
+        if (error.code === "permission-denied") {
+          setCompletionMessage("Permission denied while saving proof. Please sign in again.");
+          return;
+        }
+        if (error.code === "resource-exhausted" || error.code === "invalid-argument") {
+          setCompletionMessage("Proof payload is too large. Please upload fewer or smaller images.");
+          return;
+        }
+      }
+
       setCompletionMessage("Unable to submit proof right now. Please try again.");
     } finally {
       setCompletionSubmitting(false);
@@ -593,6 +710,28 @@ export function VolunteerDashboard() {
     }
   };
 
+  const handleVolunteerIdProofSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    const encodedImage = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+      reader.onerror = () => reject(new Error("volunteer-id-proof-read-failed"));
+      reader.readAsDataURL(file);
+    });
+
+    if (encodedImage.startsWith("data:image/")) {
+      setVerificationIdProofImage(encodedImage);
+      setVerificationDigiLockerVerified(false);
+      setSettingsMessage("ID proof uploaded. Continue with DigiLocker verification.");
+    }
+
+    event.target.value = "";
+  };
+
   const handleVerifyVolunteerIdentity = async () => {
     const user = auth.currentUser;
     if (!user) {
@@ -602,6 +741,11 @@ export function VolunteerDashboard() {
 
     if (!verificationGovernmentId.trim()) {
       setSettingsMessage("Please enter Aadhaar/government ID before verification.");
+      return;
+    }
+
+    if (!verificationIdProofImage) {
+      setSettingsMessage("Please upload an ID image before DigiLocker verification.");
       return;
     }
 
@@ -619,6 +763,7 @@ export function VolunteerDashboard() {
         doc(db, "users", user.uid),
         {
           volunteerGovernmentId: verificationGovernmentId.trim(),
+          volunteerIdProofImage: verificationIdProofImage,
           volunteerDigiLockerVerified: verificationResult.isVerified,
           volunteerVerificationProvider: verificationResult.provider || "digilocker",
           volunteerVerificationProviderRef: verificationResult.providerReferenceId || null,
@@ -769,6 +914,16 @@ export function VolunteerDashboard() {
                   </Badge>
                 </div>
 
+                {!canAcceptTasks && (
+                  <div className="mb-4 rounded-2xl border border-[#fecaca] bg-[#fef2f2] px-4 py-3 text-sm text-[#b91c1c]">
+                    {taskAcceptanceMessage}
+                  </div>
+                )}
+
+                {taskActionMessage && (
+                  <div className="mb-4 text-sm text-[#1d4ed8]">{taskActionMessage}</div>
+                )}
+
                 <div className="space-y-4">
                   {availableTasks.length > 0 ? availableTasks.map((request) => (
                     <Card
@@ -833,9 +988,13 @@ export function VolunteerDashboard() {
                       </div>
 
                       <div className="flex gap-3">
-                        <Button onClick={() => handleAcceptTask(request.id)} className="flex-1 rounded-full bg-[#10b981] hover:bg-[#047857]">
+                        <Button
+                          onClick={() => handleAcceptTask(request.id)}
+                          disabled={!canAcceptTasks}
+                          className="flex-1 rounded-full bg-[#10b981] hover:bg-[#047857] disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
                           <CheckCircle2 className="w-4 h-4 mr-2" />
-                          Accept Task
+                          {canAcceptTasks ? "Accept Task" : "Verification Required"}
                         </Button>
                         <Button variant="outline" className="rounded-full px-6">
                           <Navigation className="w-4 h-4" />
@@ -1035,9 +1194,10 @@ export function VolunteerDashboard() {
                     accept="image/*"
                     multiple
                     className="mt-2 rounded-2xl"
+                    disabled={completionSubmitting}
                     onChange={handleCompletionProofFilesSelected}
                   />
-                  <p className="text-xs text-gray-500 mt-2">Upload up to 6 images.</p>
+                  <p className="text-xs text-gray-500 mt-2">Upload up to 6 images. Images are auto-compressed for faster proof submission.</p>
                 </div>
 
                 {completionProofImages.length > 0 && (
@@ -1189,6 +1349,16 @@ export function VolunteerDashboard() {
                         setVerificationGovernmentId(event.target.value);
                         setVerificationDigiLockerVerified(false);
                       }}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="volunteerVerificationIdProof">Government ID Proof Image</Label>
+                    <Input
+                      id="volunteerVerificationIdProof"
+                      type="file"
+                      accept="image/*"
+                      className="mt-2 rounded-2xl"
+                      onChange={handleVolunteerIdProofSelected}
                     />
                   </div>
                   <div className="flex flex-wrap items-center gap-3">

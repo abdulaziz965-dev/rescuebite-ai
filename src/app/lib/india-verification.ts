@@ -35,6 +35,49 @@ const normalizeStatus = (value: unknown): IndiaVerificationStatus => {
   return "pending";
 };
 
+const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
+const AADHAAR_PATTERN = /^[0-9]{12}$/;
+
+const verhoeffD = [
+  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+  [1, 2, 3, 4, 0, 6, 7, 8, 9, 5],
+  [2, 3, 4, 0, 1, 7, 8, 9, 5, 6],
+  [3, 4, 0, 1, 2, 8, 9, 5, 6, 7],
+  [4, 0, 1, 2, 3, 9, 5, 6, 7, 8],
+  [5, 9, 8, 7, 6, 0, 4, 3, 2, 1],
+  [6, 5, 9, 8, 7, 1, 0, 4, 3, 2],
+  [7, 6, 5, 9, 8, 2, 1, 0, 4, 3],
+  [8, 7, 6, 5, 9, 3, 2, 1, 0, 4],
+  [9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
+];
+
+const verhoeffP = [
+  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+  [1, 5, 7, 6, 2, 8, 3, 0, 9, 4],
+  [5, 8, 0, 3, 7, 9, 6, 1, 4, 2],
+  [8, 9, 1, 6, 0, 4, 3, 5, 2, 7],
+  [9, 4, 5, 3, 1, 2, 6, 8, 7, 0],
+  [4, 2, 8, 6, 5, 7, 3, 9, 0, 1],
+  [2, 7, 9, 3, 8, 0, 6, 4, 1, 5],
+  [7, 0, 4, 6, 9, 1, 3, 2, 5, 8],
+];
+
+const normalizeGovernmentId = (raw: string) => raw.replace(/\s+/g, "").toUpperCase();
+
+const isAadhaarChecksumValid = (aadhaar: string): boolean => {
+  if (!AADHAAR_PATTERN.test(aadhaar)) {
+    return false;
+  }
+
+  let c = 0;
+  const digits = aadhaar.split("").reverse().map((digit) => Number.parseInt(digit, 10));
+  for (let i = 0; i < digits.length; i += 1) {
+    c = verhoeffD[c][verhoeffP[i % 8][digits[i]]];
+  }
+
+  return c === 0;
+};
+
 const isBackendUnavailableError = (error: any): boolean => {
   const statusCode = error?.response?.status;
   return statusCode === 404 || statusCode === 405 || statusCode === 500 || error?.code === "ERR_NETWORK";
@@ -118,6 +161,35 @@ export const verifyIndianGovernmentIdentity = async (
       isVerified: isLikelyValid,
       raw: {
         governmentIdLength: input.governmentId.trim().length,
+      },
+    };
+  }
+
+  if (provider === "open-public") {
+    const normalizedGovernmentId = normalizeGovernmentId(input.governmentId.trim());
+    const fullNameValid = input.fullName.trim().length >= 3;
+    const isAadhaar = AADHAAR_PATTERN.test(normalizedGovernmentId);
+    const isPan = PAN_PATTERN.test(normalizedGovernmentId);
+    const aadhaarChecksumValid = isAadhaar ? isAadhaarChecksumValid(normalizedGovernmentId) : false;
+    const formatValid = isPan || aadhaarChecksumValid;
+    const isVerified = fullNameValid && formatValid;
+
+    return {
+      status: isVerified ? "verified" : "pending",
+      provider: "open-public-checks",
+      providerReferenceId: `OPEN-${Date.now()}`,
+      reason: isVerified
+        ? isAadhaar
+          ? "No-partner checks passed (Aadhaar checksum + profile fields)."
+          : "No-partner checks passed (PAN format + profile fields)."
+        : "No-partner checks could not verify ID format/checksum yet.",
+      isVerified,
+      raw: {
+        fullNameValid,
+        isAadhaar,
+        isPan,
+        aadhaarChecksumValid,
+        mode: "format-and-checksum",
       },
     };
   }
