@@ -32,6 +32,7 @@ import {
 import { ImageWithFallback } from "../components/figma/ImageWithFallback";
 import { collection, doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
 import { onAuthStateChanged, sendPasswordResetEmail, updateProfile } from "firebase/auth";
+import { FirebaseError } from "firebase/app";
 import { auth, db } from "../../firebase/config";
 import { sendNotification } from "../lib/notifications";
 import { verifyIndianGovernmentIdentity, verifyIndianNgoDocuments } from "../lib/india-verification";
@@ -52,6 +53,7 @@ type Donation = {
   donorEmail?: string;
   claimedByUid?: string;
   claimedProofImages?: string[];
+  claimedProofDescription?: string;
   pickupLatitude?: number;
   pickupLongitude?: number;
 };
@@ -60,6 +62,81 @@ type ReceiverMode = "individual" | "ngo";
 type ReceiverIndividualMode = "new" | "experienced";
 type ReceiverTab = "available" | "history" | "map" | "proof" | "settings";
 type VerificationStatus = "pending" | "verified" | "rejected";
+
+const MAX_CLAIM_PROOF_IMAGES = 6;
+const MAX_CLAIM_PROOF_IMAGE_DIMENSION = 1280;
+const TARGET_CLAIM_PROOF_IMAGE_BYTES = 220 * 1024;
+const MAX_TOTAL_CLAIM_PROOF_IMAGE_BYTES = 850 * 1024;
+
+const readBlobAsDataUrl = (blob: Blob): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error("claim-proof-read-failed"));
+    };
+    reader.onerror = () => reject(new Error("claim-proof-read-failed"));
+    reader.readAsDataURL(blob);
+  });
+
+const loadImageElement = (url: string): Promise<HTMLImageElement> =>
+  new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("claim-proof-image-load-failed"));
+    image.src = url;
+  });
+
+const canvasToBlob = (canvas: HTMLCanvasElement, quality: number): Promise<Blob> =>
+  new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob) {
+          resolve(blob);
+          return;
+        }
+        reject(new Error("claim-proof-encode-failed"));
+      },
+      "image/jpeg",
+      quality
+    );
+  });
+
+const optimizeClaimProofImage = async (file: File): Promise<string> => {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const image = await loadImageElement(objectUrl);
+    const largestSide = Math.max(image.width, image.height);
+    const scale =
+      largestSide > MAX_CLAIM_PROOF_IMAGE_DIMENSION ? MAX_CLAIM_PROOF_IMAGE_DIMENSION / largestSide : 1;
+    const targetWidth = Math.max(1, Math.round(image.width * scale));
+    const targetHeight = Math.max(1, Math.round(image.height * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+    const context = canvas.getContext("2d");
+    if (!context) {
+      throw new Error("claim-proof-canvas-unavailable");
+    }
+
+    context.drawImage(image, 0, 0, targetWidth, targetHeight);
+
+    let encodedBlob = await canvasToBlob(canvas, 0.82);
+    let quality = 0.82;
+    while (encodedBlob.size > TARGET_CLAIM_PROOF_IMAGE_BYTES && quality > 0.45) {
+      quality = Math.max(0.45, quality - 0.1);
+      encodedBlob = await canvasToBlob(canvas, quality);
+    }
+
+    return await readBlobAsDataUrl(encodedBlob);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+};
 
 const receiverTabs: ReceiverTab[] = ["available", "history", "map", "proof", "settings"];
 const isReceiverTab = (value: string): value is ReceiverTab => receiverTabs.includes(value as ReceiverTab);
@@ -322,6 +399,17 @@ export function ReceiverDashboard() {
       .slice(0, 12);
   }, [userClaimedDonations]);
 
+  const recentClaimProofSubmissions = useMemo(() => {
+    return userClaimedDonations
+      .filter((donation) => Array.isArray(donation.claimedProofImages) && donation.claimedProofImages.length > 0)
+      .sort((a, b) => {
+        const timeA = a.claimedAt?.toDate?.().getTime() || 0;
+        const timeB = b.claimedAt?.toDate?.().getTime() || 0;
+        return timeB - timeA;
+      })
+      .slice(0, 6);
+  }, [userClaimedDonations]);
+
   const liveMapDonations = useMemo(() => {
     return donations
       .filter((donation) => !donation.claimed)
@@ -343,6 +431,15 @@ export function ReceiverDashboard() {
   }, [userClaimedDonations]);
   const activeClaims = useMemo(() => donations.filter((donation) => !donation.claimed).length, [donations]);
   const peopleFed = useMemo(() => Math.max(1, Math.round(mealsReceived / 3)), [mealsReceived]);
+
+  const claimEligibilityMessage = useMemo(() => {
+    if (receiverType === "ngo") {
+      return ngoLinkedToApp ? "" : "NGO document verification is required before accepting donations.";
+    }
+
+    return receiverDigiLockerVerified ? "" : "DigiLocker verification is required before accepting donations.";
+  }, [ngoLinkedToApp, receiverDigiLockerVerified, receiverType]);
+  const canAcceptDonations = claimEligibilityMessage.length === 0;
 
   const handleOpenGoogleMaps = (donation: Donation) => {
     if (typeof donation.pickupLatitude === "number" && typeof donation.pickupLongitude === "number") {
@@ -464,6 +561,11 @@ export function ReceiverDashboard() {
   );
 
   const handleClaimFood = (donationId: string) => {
+    if (!canAcceptDonations) {
+      setClaimFlowMessage(claimEligibilityMessage);
+      return;
+    }
+
     const selectedDonation = donations.find((donation) => donation.id === donationId);
     if (!selectedDonation) {
       alert("Donation not found. Please refresh and try again.");
@@ -485,25 +587,36 @@ export function ReceiverDashboard() {
       return;
     }
 
-    const fileArray = Array.from(files).slice(0, 6);
-    const encodedImages = await Promise.all(
-      fileArray.map(
-        (file) =>
-          new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
-            reader.onerror = () => reject(new Error("file-read-failed"));
-            reader.readAsDataURL(file);
-          })
-      )
-    );
+    try {
+      const remainingSlots = Math.max(0, MAX_CLAIM_PROOF_IMAGES - proofImages.length);
+      if (remainingSlots === 0) {
+        setClaimFlowMessage("You can upload up to 6 proof images.");
+        event.target.value = "";
+        return;
+      }
 
-    const validImages = encodedImages.filter((item) => item.startsWith("data:image/"));
-    setProofImages((previous) => [...previous, ...validImages].slice(0, 6));
-    event.target.value = "";
+      const selectedFiles = Array.from(files)
+        .filter((file) => file.type.startsWith("image/"))
+        .slice(0, remainingSlots);
+
+      const optimizedImages = await Promise.all(selectedFiles.map((file) => optimizeClaimProofImage(file)));
+      const validImages = optimizedImages.filter((item) => item.startsWith("data:image/"));
+
+      setProofImages((previous) => [...previous, ...validImages]);
+      setClaimFlowMessage(validImages.length > 0 ? "" : "Please choose valid image files.");
+    } catch {
+      setClaimFlowMessage("One or more images could not be processed. Try smaller photos.");
+    } finally {
+      event.target.value = "";
+    }
   };
 
   const handleSubmitClaimWithProof = async () => {
+    if (!canAcceptDonations) {
+      setClaimFlowMessage(claimEligibilityMessage);
+      return;
+    }
+
     if (!claimDraftDonation) {
       setClaimFlowMessage("Select a donation first.");
       return;
@@ -516,6 +629,15 @@ export function ReceiverDashboard() {
 
     if (proofImages.length === 0) {
       setClaimFlowMessage("Please upload at least one proof image.");
+      return;
+    }
+
+    const totalProofImageBytes = proofImages.reduce(
+      (sum, image) => sum + new TextEncoder().encode(image).length,
+      0
+    );
+    if (totalProofImageBytes > MAX_TOTAL_CLAIM_PROOF_IMAGE_BYTES) {
+      setClaimFlowMessage("Proof photos are too large. Remove some images and try again.");
       return;
     }
 
@@ -569,7 +691,19 @@ export function ReceiverDashboard() {
       setProofDescription("");
       setProofImages([]);
       setActiveTab("history");
-    } catch {
+    } catch (error) {
+      if (error instanceof FirebaseError) {
+        if (error.code === "permission-denied") {
+          setClaimFlowMessage("Permission denied while saving proof. Please sign in again.");
+          return;
+        }
+
+        if (error.code === "resource-exhausted" || error.code === "invalid-argument") {
+          setClaimFlowMessage("Proof payload is too large. Please upload fewer or smaller images.");
+          return;
+        }
+      }
+
       setClaimFlowMessage("Could not submit claim proof right now. Please try again.");
     } finally {
       setIsClaimSubmitLoading(false);
@@ -961,6 +1095,11 @@ export function ReceiverDashboard() {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-6">
+                  {!canAcceptDonations && (
+                    <div className="col-span-2 rounded-2xl border border-[#fecaca] bg-[#fef2f2] px-4 py-3 text-sm text-[#b91c1c]">
+                      {claimEligibilityMessage}
+                    </div>
+                  )}
                   {filteredAndSortedDonations.length > 0 ? (
                     filteredAndSortedDonations.map((donation, index) => (
                       <Card key={donation.id} className={`rounded-3xl border-0 shadow-lg hover:shadow-xl transition-all overflow-hidden ${index === 0 ? "ring-2 ring-[#10b981]" : ""}`}>
@@ -1007,10 +1146,16 @@ export function ReceiverDashboard() {
                           </div>
                           <Button
                             onClick={() => handleClaimFood(donation.id)}
-                            disabled={donation.claimed || claimingId === donation.id}
+                            disabled={!canAcceptDonations || donation.claimed || claimingId === donation.id}
                             className="w-full rounded-full bg-[#10b981] hover:bg-[#047857] disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            {claimingId === donation.id ? "Claiming..." : donation.claimed ? "Claimed" : "Claim Food"}
+                            {claimingId === donation.id
+                              ? "Claiming..."
+                              : !canAcceptDonations
+                              ? "Verification Required"
+                              : donation.claimed
+                              ? "Claimed"
+                              : "Claim Food"}
                           </Button>
                           <Button
                             type="button"
@@ -1294,7 +1439,47 @@ export function ReceiverDashboard() {
                     </div>
                   </>
                 ) : (
-                  <div className="text-gray-600">No donation selected for claim proof. Choose a donation from Available Food first.</div>
+                  <div className="space-y-5">
+                    <div className="text-gray-600">No donation selected for claim proof. Choose a donation from Available Food first.</div>
+
+                    {recentClaimProofSubmissions.length > 0 && (
+                      <div className="space-y-4">
+                        <div className="text-sm font-semibold text-gray-700">Recent Submitted Claim Proofs</div>
+                        <div className="space-y-4">
+                          {recentClaimProofSubmissions.map((donation) => {
+                            const images = Array.isArray(donation.claimedProofImages)
+                              ? donation.claimedProofImages.filter((item) => typeof item === "string")
+                              : [];
+
+                            return (
+                              <div key={donation.id} className="rounded-2xl border border-gray-200 p-4 space-y-3 bg-gray-50">
+                                <div>
+                                  <div className="font-semibold">{donation.foodName}</div>
+                                  <div className="text-xs text-gray-500">
+                                    {donation.quantity} • Submitted {formatRelativeTime(donation.claimedAt)}
+                                  </div>
+                                </div>
+
+                                {donation.claimedProofDescription && (
+                                  <p className="text-sm text-gray-700">{donation.claimedProofDescription}</p>
+                                )}
+
+                                {images.length > 0 && (
+                                  <div className="grid md:grid-cols-3 gap-3">
+                                    {images.map((image, index) => (
+                                      <div key={`${donation.id}-${index}`} className="rounded-2xl overflow-hidden border border-gray-200 bg-white">
+                                        <img src={image} alt={`Submitted claim proof ${index + 1}`} className="w-full h-32 object-cover" />
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 {claimFlowMessage && <div className="mt-4 text-sm text-[#1d4ed8]">{claimFlowMessage}</div>}

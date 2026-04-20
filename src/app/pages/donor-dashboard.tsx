@@ -31,8 +31,9 @@ import {
   X
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { addDoc, collection, doc, getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
+import { addDoc, collection, deleteDoc, doc, getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
 import { sendPasswordResetEmail, updateProfile } from "firebase/auth";
+import { FirebaseError } from "firebase/app";
 import { auth, db } from "../../firebase/config";
 import { sendNotification } from "../lib/notifications";
 import { verifyIndianGovernmentIdentity } from "../lib/india-verification";
@@ -92,6 +93,78 @@ const RAPIDAPI_HOST = "google-map-places-new-v2.p.rapidapi.com";
 const RAPIDAPI_AUTOCOMPLETE_ENDPOINT = `https://${RAPIDAPI_HOST}/v1/places/autocomplete`;
 const RAPIDAPI_PLACE_DETAILS_ENDPOINT = (placeId: string) =>
   `https://${RAPIDAPI_HOST}/v1/places/${encodeURIComponent(placeId)}`;
+const MAX_DONATION_IMAGE_DIMENSION = 1280;
+const TARGET_DONATION_IMAGE_BYTES = 220 * 1024;
+const MAX_DONATION_IMAGE_BYTES = 420 * 1024;
+
+const readBlobAsDataUrl = (blob: Blob): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error("donation-image-read-failed"));
+    };
+    reader.onerror = () => reject(new Error("donation-image-read-failed"));
+    reader.readAsDataURL(blob);
+  });
+
+const loadImageElement = (url: string): Promise<HTMLImageElement> =>
+  new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("donation-image-load-failed"));
+    image.src = url;
+  });
+
+const canvasToBlob = (canvas: HTMLCanvasElement, quality: number): Promise<Blob> =>
+  new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob) {
+          resolve(blob);
+          return;
+        }
+        reject(new Error("donation-image-encode-failed"));
+      },
+      "image/jpeg",
+      quality
+    );
+  });
+
+const optimizeDonationImage = async (file: File): Promise<string> => {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const image = await loadImageElement(objectUrl);
+    const largestSide = Math.max(image.width, image.height);
+    const scale = largestSide > MAX_DONATION_IMAGE_DIMENSION ? MAX_DONATION_IMAGE_DIMENSION / largestSide : 1;
+    const targetWidth = Math.max(1, Math.round(image.width * scale));
+    const targetHeight = Math.max(1, Math.round(image.height * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+    const context = canvas.getContext("2d");
+    if (!context) {
+      throw new Error("donation-image-canvas-unavailable");
+    }
+
+    context.drawImage(image, 0, 0, targetWidth, targetHeight);
+
+    let encodedBlob = await canvasToBlob(canvas, 0.82);
+    let quality = 0.82;
+    while (encodedBlob.size > TARGET_DONATION_IMAGE_BYTES && quality > 0.45) {
+      quality = Math.max(0.45, quality - 0.1);
+      encodedBlob = await canvasToBlob(canvas, quality);
+    }
+
+    return await readBlobAsDataUrl(encodedBlob);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+};
 
 const normalizeTextValue = (value: unknown): string => {
   if (typeof value === "string") {
@@ -232,6 +305,8 @@ export function DonorDashboard() {
   const [loading, setLoading] = useState(false);
   const [isDonationsLoading, setIsDonationsLoading] = useState(true);
   const [successMessage, setSuccessMessage] = useState("");
+  const [donationActionMessage, setDonationActionMessage] = useState("");
+  const [deletingDonationId, setDeletingDonationId] = useState<string | null>(null);
   const [myDonations, setMyDonations] = useState<Donation[]>([]);
   const [donorName, setDonorName] = useState("Donor");
   const [donorGreetingName, setDonorGreetingName] = useState("Donor");
@@ -955,8 +1030,21 @@ export function DonorDashboard() {
     }).format(date);
   };
 
+  const canSubmitDonation = donorDigiLockerVerified;
+
   const handleSubmitDonation = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      alert("Please sign in again before listing a donation.");
+      return;
+    }
+
+    if (!canSubmitDonation) {
+      alert("Complete DigiLocker verification in Settings before listing donations.");
+      return;
+    }
 
     if (!foodName || !quantity || !foodType || !expiryDate || !expiryTime || !urgency) {
       alert("Please fill in all fields");
@@ -996,6 +1084,14 @@ export function DonorDashboard() {
 
     const combinedExpiryDateTime = `${expiryDate}T${expiryTime}`;
 
+    const donationImageBytes = donationImage
+      ? new TextEncoder().encode(donationImage).length
+      : 0;
+    if (donationImageBytes > MAX_DONATION_IMAGE_BYTES) {
+      alert("Donation photo is too large. Please choose a smaller image.");
+      return;
+    }
+
     setLoading(true);
     try {
       const donationRef = await addDoc(collection(db, "donations"), {
@@ -1010,8 +1106,8 @@ export function DonorDashboard() {
         pickupLatitude: finalPickupLatitude,
         pickupLongitude: finalPickupLongitude,
         image: donationImage || null,
-        donorUid: auth.currentUser?.uid || null,
-        donorEmail: auth.currentUser?.email || null,
+        donorUid: currentUser.uid,
+        donorEmail: currentUser.email || null,
         claimed: false,
         createdAt: serverTimestamp(),
       });
@@ -1034,7 +1130,7 @@ export function DonorDashboard() {
         sendNotification({
           recipientRole: "admin",
           title: "New donation listed",
-          message: `${foodName} was listed by ${auth.currentUser?.displayName || auth.currentUser?.email || "a donor"}.`,
+          message: `${foodName} was listed by ${currentUser.displayName || currentUser.email || "a donor"}.`,
           source: "donor-dashboard",
           link: "/admin",
         }),
@@ -1060,6 +1156,18 @@ export function DonorDashboard() {
       }, 3000);
     } catch (error) {
       console.error("Error submitting donation:", error);
+      if (error instanceof FirebaseError) {
+        if (error.code === "permission-denied") {
+          alert("Permission denied while adding listing. Please sign in again.");
+          return;
+        }
+
+        if (error.code === "resource-exhausted" || error.code === "invalid-argument") {
+          alert("Listing data is too large. Use fewer or smaller images and try again.");
+          return;
+        }
+      }
+
       alert("Error submitting donation. Please try again.");
     } finally {
       setLoading(false);
@@ -1072,15 +1180,13 @@ export function DonorDashboard() {
       return;
     }
 
-    const encodedImage = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
-      reader.onerror = () => reject(new Error("image-read-failed"));
-      reader.readAsDataURL(file);
-    });
-
-    if (encodedImage.startsWith("data:image/")) {
-      setDonationImage(encodedImage);
+    try {
+      const encodedImage = await optimizeDonationImage(file);
+      if (encodedImage.startsWith("data:image/")) {
+        setDonationImage(encodedImage);
+      }
+    } catch {
+      alert("Could not process this image. Please choose another one.");
     }
 
     event.target.value = "";
@@ -1309,6 +1415,38 @@ export function DonorDashboard() {
     setIsProofViewerOpen(true);
   };
 
+  const handleDeleteDonation = async (donation: Donation) => {
+    const currentUid = auth.currentUser?.uid || null;
+    const currentEmail = (auth.currentUser?.email || "").toLowerCase();
+    const matchesOwnerByUid = currentUid ? donation.donorUid === currentUid : false;
+    const matchesOwnerByEmail = currentEmail
+      ? (donation.donorEmail || "").toLowerCase() === currentEmail
+      : false;
+
+    if (!matchesOwnerByUid && !matchesOwnerByEmail) {
+      setDonationActionMessage("You can only delete donations that you listed.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete listing for ${donation.foodName || "this donation"}? This action cannot be undone.`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingDonationId(donation.id);
+    setDonationActionMessage("");
+    try {
+      await deleteDoc(doc(db, "donations", donation.id));
+      setDonationActionMessage("Donation listing deleted successfully.");
+    } catch {
+      setDonationActionMessage("Could not delete this donation right now.");
+    } finally {
+      setDeletingDonationId(null);
+    }
+  };
+
   return (
     <>
       <GlobalSidebar role="donor" activeTab={activeTab} onTabChange={setActiveTab} />
@@ -1405,6 +1543,9 @@ export function DonorDashboard() {
                   <h2 className="text-xl font-bold">Recent Donations</h2>
                   <Button variant="outline" className="rounded-full">View All</Button>
                 </div>
+                {donationActionMessage && (
+                  <div className="mb-4 text-sm text-[#1d4ed8]">{donationActionMessage}</div>
+                )}
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
@@ -1415,6 +1556,7 @@ export function DonorDashboard() {
                         <th className="text-left py-3 px-4 font-medium text-gray-600">Status</th>
                         <th className="text-left py-3 px-4 font-medium text-gray-600">Receiver</th>
                         <th className="text-left py-3 px-4 font-medium text-gray-600">Verify</th>
+                        <th className="text-left py-3 px-4 font-medium text-gray-600">Actions</th>
                         <th className="text-left py-3 px-4 font-medium text-gray-600">Time</th>
                       </tr>
                     </thead>
@@ -1455,11 +1597,22 @@ export function DonorDashboard() {
                               <span className="text-sm text-gray-500">-</span>
                             )}
                           </td>
+                          <td className="py-4 px-4">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="rounded-full h-9 border-[#ef4444] text-[#b91c1c] hover:bg-[#fee2e2]"
+                              disabled={deletingDonationId === donation.id}
+                              onClick={() => handleDeleteDonation(donation)}
+                            >
+                              {deletingDonationId === donation.id ? "Deleting..." : "Delete"}
+                            </Button>
+                          </td>
                           <td className="py-4 px-4 text-gray-600">{formatRelativeTime(donation.createdAt)}</td>
                         </tr>
                       )) : (
                         <tr>
-                          <td colSpan={7} className="py-6 text-center text-gray-500">
+                          <td colSpan={8} className="py-6 text-center text-gray-500">
                             {isDonationsLoading ? "Loading donations..." : "No donations yet"}
                           </td>
                         </tr>
@@ -1479,6 +1632,9 @@ export function DonorDashboard() {
                   {myDonations.length} Total
                 </Badge>
               </div>
+              {donationActionMessage && (
+                <div className="mb-4 text-sm text-[#1d4ed8]">{donationActionMessage}</div>
+              )}
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
@@ -1490,6 +1646,7 @@ export function DonorDashboard() {
                       <th className="text-left py-3 px-4 font-medium text-gray-600">Status</th>
                       <th className="text-left py-3 px-4 font-medium text-gray-600">Receiver</th>
                       <th className="text-left py-3 px-4 font-medium text-gray-600">Verify</th>
+                      <th className="text-left py-3 px-4 font-medium text-gray-600">Actions</th>
                       <th className="text-left py-3 px-4 font-medium text-gray-600">Posted</th>
                     </tr>
                   </thead>
@@ -1526,11 +1683,22 @@ export function DonorDashboard() {
                             <span className="text-sm text-gray-500">-</span>
                           )}
                         </td>
+                        <td className="py-4 px-4">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="rounded-full h-9 border-[#ef4444] text-[#b91c1c] hover:bg-[#fee2e2]"
+                            disabled={deletingDonationId === donation.id}
+                            onClick={() => handleDeleteDonation(donation)}
+                          >
+                            {deletingDonationId === donation.id ? "Deleting..." : "Delete"}
+                          </Button>
+                        </td>
                         <td className="py-4 px-4 text-gray-600">{formatRelativeTime(donation.createdAt)}</td>
                       </tr>
                     )) : (
                       <tr>
-                        <td colSpan={8} className="py-6 text-center text-gray-500">
+                        <td colSpan={9} className="py-6 text-center text-gray-500">
                           {isDonationsLoading ? "Loading your donations..." : "No donations found"}
                         </td>
                       </tr>
@@ -1758,10 +1926,13 @@ export function DonorDashboard() {
                 <Button 
                   type="submit"
                   className="w-full rounded-full bg-[#10b981] hover:bg-[#047857] h-12 disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={loading}
+                  disabled={loading || !canSubmitDonation}
                 >
-                  {loading ? "Submitting..." : "Submit Donation"}
+                  {loading ? "Submitting..." : canSubmitDonation ? "Submit Donation" : "Verify DigiLocker to Submit"}
                 </Button>
+                {!canSubmitDonation && (
+                  <p className="text-xs text-[#b91c1c]">Listing is locked until your DigiLocker identity is verified in Settings.</p>
+                )}
               </form>
             </Card>
           )}
