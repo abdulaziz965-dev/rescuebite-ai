@@ -26,12 +26,24 @@ export function LandingPage() {
   const [donations, setDonations] = useState<any[]>([]);
 
   useEffect(() => {
-    const unsubUsers = onSnapshot(collection(db, "users"), (snapshot) => {
-      setUsers(snapshot.docs.map((docSnapshot) => ({ id: docSnapshot.id, ...docSnapshot.data() })));
-    });
-    const unsubDonations = onSnapshot(collection(db, "donations"), (snapshot) => {
-      setDonations(snapshot.docs.map((docSnapshot) => ({ id: docSnapshot.id, ...docSnapshot.data() })));
-    });
+    const unsubUsers = onSnapshot(
+      collection(db, "users"),
+      (snapshot) => {
+        setUsers(snapshot.docs.map((docSnapshot) => ({ id: docSnapshot.id, ...docSnapshot.data() })));
+      },
+      () => {
+        setUsers([]);
+      }
+    );
+    const unsubDonations = onSnapshot(
+      collection(db, "donations"),
+      (snapshot) => {
+        setDonations(snapshot.docs.map((docSnapshot) => ({ id: docSnapshot.id, ...docSnapshot.data() })));
+      },
+      () => {
+        setDonations([]);
+      }
+    );
 
     return () => {
       unsubUsers();
@@ -39,23 +51,16 @@ export function LandingPage() {
     };
   }, []);
 
-  const liveMetrics = useMemo(() => {
+  const allTimeMetrics = useMemo(() => {
     const mealsSaved = donations.reduce((sum, donation) => {
-      const parsed = parseInt(donation.quantity, 10);
+      const parsed = typeof donation.quantity === "number" ? donation.quantity : parseInt(donation.quantity, 10);
       return sum + (Number.isNaN(parsed) ? 0 : parsed);
     }, 0);
     const wasteReducedKg = Math.round(mealsSaved * 0.8);
     const ngosConnected = users.filter((user) => user.role === "receiver").length;
     const claimedCount = donations.filter((donation) => donation.claimed).length;
     const successRate = donations.length > 0 ? Math.round((claimedCount / donations.length) * 100) : 0;
-    const todayMatches = donations.filter((donation) => {
-      const date = donation.createdAt?.toDate?.();
-      if (!date) {
-        return false;
-      }
-      return date.toDateString() === new Date().toDateString();
-    }).length;
-    return { mealsSaved, wasteReducedKg, ngosConnected, successRate, todayMatches };
+    return { mealsSaved, wasteReducedKg, ngosConnected, successRate };
   }, [donations, users]);
 
   return (
@@ -150,8 +155,8 @@ export function LandingPage() {
                 transition={{ duration: 0.6, delay: 0.4 }}
                 className="absolute -left-6 top-1/4 bg-white rounded-3xl shadow-xl p-6 max-w-[200px]"
               >
-                <div className="text-3xl font-bold text-[#10b981] mb-1">{liveMetrics.todayMatches}</div>
-                <div className="text-sm text-gray-600">Meals Saved Today</div>
+                <div className="text-3xl font-bold text-[#10b981] mb-1">{allTimeMetrics.mealsSaved}</div>
+                <div className="text-sm text-gray-600">Meals Saved All Time</div>
               </motion.div>
               
               <motion.div
@@ -160,7 +165,7 @@ export function LandingPage() {
                 transition={{ duration: 0.6, delay: 0.6 }}
                 className="absolute -right-6 bottom-1/4 bg-white rounded-3xl shadow-xl p-6 max-w-[200px]"
               >
-                <div className="text-3xl font-bold text-[#3b82f6] mb-1">{liveMetrics.wasteReducedKg} kg</div>
+                <div className="text-3xl font-bold text-[#3b82f6] mb-1">{allTimeMetrics.wasteReducedKg} kg</div>
                 <div className="text-sm text-gray-600">Waste Reduced</div>
               </motion.div>
             </motion.div>
@@ -169,9 +174,9 @@ export function LandingPage() {
           {/* Animated Metrics Cards */}
           <div className="grid md:grid-cols-3 gap-6 mt-20">
             {[
-              { icon: Utensils, label: "Meals Saved", value: `${liveMetrics.mealsSaved}`, color: "from-[#10b981] to-[#047857]" },
-              { icon: TrendingDown, label: "Waste Reduced", value: `${liveMetrics.wasteReducedKg} kg`, color: "from-[#3b82f6] to-[#1d4ed8]" },
-              { icon: Users, label: "NGOs Connected", value: `${liveMetrics.ngosConnected}`, color: "from-[#8b5cf6] to-[#6d28d9]" },
+              { icon: Utensils, label: "Meals Saved", value: `${allTimeMetrics.mealsSaved}`, color: "from-[#10b981] to-[#047857]" },
+              { icon: TrendingDown, label: "Waste Reduced", value: `${allTimeMetrics.wasteReducedKg} kg`, color: "from-[#3b82f6] to-[#1d4ed8]" },
+              { icon: Users, label: "NGOs Connected", value: `${allTimeMetrics.ngosConnected}`, color: "from-[#8b5cf6] to-[#6d28d9]" },
             ].map((metric, index) => (
               <motion.div
                 key={metric.label}
@@ -313,10 +318,10 @@ export function LandingPage() {
 
           <div className="grid md:grid-cols-4 gap-8">
             {[
-              { icon: Heart, value: `${liveMetrics.mealsSaved}`, label: "Lives Impacted" },
-              { icon: Target, value: `${liveMetrics.wasteReducedKg} kg`, label: "CO₂ Prevented" },
-              { icon: Shield, value: `${liveMetrics.ngosConnected}`, label: "Partner NGOs" },
-              { icon: Zap, value: `${liveMetrics.successRate}%`, label: "Match Success" },
+              { icon: Heart, value: `${allTimeMetrics.mealsSaved}`, label: "Lives Impacted" },
+              { icon: Target, value: `${allTimeMetrics.wasteReducedKg} kg`, label: "CO₂ Prevented" },
+              { icon: Shield, value: `${allTimeMetrics.ngosConnected}`, label: "Partner NGOs" },
+              { icon: Zap, value: `${allTimeMetrics.successRate}%`, label: "Match Success" },
             ].map((stat) => (
               <motion.div
                 key={stat.label}
